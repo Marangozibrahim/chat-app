@@ -1,9 +1,10 @@
 export default function PresenceBadge({ members }) {
   const online = members.filter(m => m.online)
+  if (online.length === 0) return <p className="text-xs text-zinc-400">No one online</p>
   return (
-    <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-600 dark:text-gray-400 shrink-0">
-      <span className="font-semibold text-gray-800 dark:text-gray-200">Online ({online.length}):</span>{' '}
-      {online.map(m => m.username).join(', ') || '—'}
-    </div>
+    <p className="text-xs text-zinc-400 truncate">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 mb-px" />
+      {online.map(m => m.username).join(', ')}
+    </p>
   )
 }
