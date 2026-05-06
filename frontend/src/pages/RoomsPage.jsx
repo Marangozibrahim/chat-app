@@ -45,7 +45,7 @@ export default function RoomsPage() {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Rooms</h2>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
+            <ThemeToggle className="text-gray-700 dark:text-gray-200 hover:bg-black/10 dark:hover:bg-white/10" />
             <button
               onClick={logout}
               className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm rounded-lg transition-colors"

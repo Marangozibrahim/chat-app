@@ -38,7 +38,7 @@ export default function ChatPage() {
       <div className="flex items-center gap-3 px-4 py-3 bg-blue-600 text-white shrink-0">
         <button onClick={() => navigate('/rooms')} className="text-xl leading-none hover:opacity-75 transition-opacity">←</button>
         <strong className="flex-1">Room</strong>
-        <ThemeToggle />
+        <ThemeToggle className="text-white hover:bg-white/10" />
       </div>
       <PresenceBadge members={members} />
       <MessageList messages={allMessages} />
