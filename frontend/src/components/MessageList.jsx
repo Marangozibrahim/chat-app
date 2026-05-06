@@ -8,12 +8,12 @@ export default function MessageList({ messages }) {
   }, [messages])
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--bg)' }}>
       {messages.map((m) => (
-        <div key={m.id} style={{ background: '#fff', padding: '6px 10px', borderRadius: 6, maxWidth: '70%' }}>
-          <strong style={{ fontSize: 12, color: '#555' }}>{m.username}</strong>
-          <p style={{ margin: '2px 0 0', wordBreak: 'break-word' }}>{m.body}</p>
-          <span style={{ fontSize: 10, color: '#aaa' }}>{new Date(m.created_at).toLocaleTimeString()}</span>
+        <div key={m.id} style={{ background: 'var(--surface)', padding: '6px 10px', borderRadius: 6, maxWidth: '70%', boxShadow: `0 1px 2px var(--shadow)` }}>
+          <strong style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.username}</strong>
+          <p style={{ margin: '2px 0 0', wordBreak: 'break-word', color: 'var(--text)' }}>{m.body}</p>
+          <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>{new Date(m.created_at).toLocaleTimeString()}</span>
         </div>
       ))}
       <div ref={bottomRef} />

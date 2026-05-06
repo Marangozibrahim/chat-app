@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listRooms, createRoom, joinRoom } from '../api/rooms'
 import { useAuth } from '../context/AuthContext'
+import ThemeToggle from '../components/ThemeToggle'
 
 export default function RoomsPage() {
   const [rooms, setRooms] = useState([])
@@ -44,9 +45,12 @@ export default function RoomsPage() {
 
   return (
     <div style={{ maxWidth: 600, margin: '40px auto', padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h2>Rooms</h2>
-        <button onClick={logout} style={{ padding: '6px 12px', background: '#e55', color: '#fff', border: 'none', borderRadius: 4 }}>Logout</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <h2 style={{ color: 'var(--text)' }}>Rooms</h2>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <ThemeToggle />
+          <button onClick={logout} style={{ padding: '6px 12px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 4 }}>Logout</button>
+        </div>
       </div>
 
       <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
@@ -54,21 +58,21 @@ export default function RoomsPage() {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="New room name"
-          style={{ flex: 1, padding: '8px 10px', border: '1px solid #ccc', borderRadius: 4 }}
+          style={{ flex: 1, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface)', color: 'var(--text)' }}
         />
-        <button type="submit" style={{ padding: '8px 16px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: 4 }}>Create</button>
+        <button type="submit" style={{ padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4 }}>Create</button>
       </form>
 
-      {error && <p style={{ color: 'red', marginBottom: 12 }}>{error}</p>}
+      {error && <p style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</p>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {rooms.map((r) => (
-          <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', padding: '12px 16px', borderRadius: 6, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--surface)', padding: '12px 16px', borderRadius: 6, boxShadow: `0 1px 3px var(--shadow)` }}>
             <div>
-              <strong>{r.name}</strong>
-              <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>{r.member_count} member{r.member_count !== 1 ? 's' : ''}</span>
+              <strong style={{ color: 'var(--text)' }}>{r.name}</strong>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>{r.member_count} member{r.member_count !== 1 ? 's' : ''}</span>
             </div>
-            <button onClick={() => handleJoin(r.id)} style={{ padding: '6px 14px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: 4 }}>Join</button>
+            <button onClick={() => handleJoin(r.id)} style={{ padding: '6px 14px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 4 }}>Join</button>
           </div>
         ))}
       </div>

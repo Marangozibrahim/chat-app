@@ -8,6 +8,7 @@ import { usePresence } from '../hooks/usePresence'
 import MessageList from '../components/MessageList'
 import MessageInput from '../components/MessageInput'
 import PresenceBadge from '../components/PresenceBadge'
+import ThemeToggle from '../components/ThemeToggle'
 
 export default function ChatPage() {
   const { roomId } = useParams()
@@ -33,10 +34,11 @@ export default function ChatPage() {
   const allMessages = [...history, ...messages]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#0066cc', color: '#fff' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--accent)', color: '#fff' }}>
         <button onClick={() => navigate('/rooms')} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 18, cursor: 'pointer' }}>←</button>
-        <strong>Room</strong>
+        <strong style={{ flex: 1 }}>Room</strong>
+        <ThemeToggle />
       </div>
       <PresenceBadge members={members} />
       <MessageList messages={allMessages} />
