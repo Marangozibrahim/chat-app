@@ -26,6 +26,7 @@ export default function ChatPage() {
   const [history, setHistory] = useState([])
   const [roomName, setRoomName] = useState('')
   const [seenMap, setSeenMap] = useState({})
+  const [loading, setLoading] = useState(true)
 
   function handleSeen(data) {
     if (data.username !== username) {
@@ -37,22 +38,40 @@ export default function ChatPage() {
   const { messages, typingUsers, send, sendTyping, sendSeen } = useChatSocket(roomId, token, handlePresenceEvent, handleSeen)
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
-      const [roomRes, histRes, membersRes] = await Promise.all([
-        getRoom(roomId),
-        getHistory(roomId),
-        getRoomMembers(roomId),
-      ])
-      setRoomName(roomRes.data.name)
-      setHistory(histRes.data)
-      setMembers(membersRes.data)
+      setLoading(true)
+      try {
+        const [roomRes, histRes, membersRes] = await Promise.all([
+          getRoom(roomId),
+          getHistory(roomId),
+          getRoomMembers(roomId),
+        ])
+        if (cancelled) return
+        setRoomName(roomRes.data.name)
+        setHistory(histRes.data)
+        setMembers(membersRes.data)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
     load()
+    return () => { cancelled = true }
   }, [roomId])
 
   const allMessages = [...history, ...messages]
 
   const ownTyping = typingUsers.filter(u => u.username !== username)
+
+  if (loading) return (
+    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 items-center justify-center">
+      <div className="flex gap-1.5">
+        {[0,1,2].map(i => (
+          <span key={i} className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+        ))}
+      </div>
+    </div>
+  )
 
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950">
