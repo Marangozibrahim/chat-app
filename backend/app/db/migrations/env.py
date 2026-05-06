@@ -8,9 +8,14 @@ from sqlalchemy import pool
 from app.db.base import Base
 import app.models  # noqa: F401 — registers all models with metadata
 
+import os
+
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+if db_url := os.environ.get("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
 
