@@ -33,8 +33,15 @@ npm run build      # production build → dist/
 ### Interactive debug
 ```bash
 docker compose exec backend bash
-docker compose exec postgres psql -U chat -d chatdb
+docker compose exec postgres psql -U postgres -d chatdb
 docker compose exec redis redis-cli
+```
+
+### Redis inspection
+```bash
+docker compose exec redis redis-cli KEYS "*"
+docker compose exec redis redis-cli HGETALL presence:room:<id>
+docker compose exec redis redis-cli MONITOR   # live command stream
 ```
 
 ## Architecture
@@ -64,24 +71,28 @@ Cursor-based: `WHERE created_at < :before ORDER BY created_at DESC LIMIT n`. Bac
 - `app/ws/redis_listener.py` — long-running background coroutine, started in lifespan
 - `app/services/presence.py` — all Redis HSET/ZSET presence logic
 - `app/routers/ws.py` — WebSocket endpoint: JWT validation, message loop, presence lifecycle on connect/disconnect
+- `app/services/auth.py` — password hashing via `bcrypt` directly (not passlib); JWT encode/decode via `python-jose`
 
 ### Frontend layout
 - `src/hooks/useChatSocket.js` — owns the WebSocket lifecycle; feeds messages and presence events to UI
 - `src/hooks/usePresence.js` — manages the online members list from presence events
 - `src/context/AuthContext.jsx` — JWT token in `localStorage`; provides `loginUser`, `logout`, `isAuth`
+- `src/context/ThemeContext.jsx` — dark/light theme; defaults to system preference, persists to `localStorage`
 - `src/api/client.js` — axios instance; request interceptor injects `Authorization: Bearer` header
 - Vite dev proxy: `/api/*` → `backend:8000/*`, `/ws/*` → `ws://backend:8000/ws/*`
+- Tailwind CSS v4 via `@tailwindcss/vite` plugin — no `tailwind.config.js` needed
+- Dark mode uses `[data-theme="dark"]` attribute on `<html>` via custom variant in `index.css`
 
 ### Environment variables (backend)
 All read via Pydantic `BaseSettings` from `.env`:
 ```
-DATABASE_URL   postgresql+asyncpg://...
-REDIS_URL      redis://...
+DATABASE_URL   postgresql+asyncpg://postgres:<pass>@postgres:5432/chatdb
+REDIS_URL      redis://redis:6379/0
 JWT_SECRET     <secret>
 JWT_EXPIRE_MINUTES  60
 ```
 
-Copy `backend/.env.example` to `backend/.env` before running locally outside Docker.
+`docker-compose.yml` injects these directly — `.env` is only needed for local runs outside Docker. Alembic `env.py` reads `DATABASE_URL` from the environment, overriding the `alembic.ini` fallback.
 
 ### Migrations
 Models live in `app/models/`. After changing a model, run `alembic revision --autogenerate -m "description"` then `alembic upgrade head`. Alembic `env.py` imports all models via `app/models/__init__.py` to register them with metadata — keep that import up to date when adding new models.
