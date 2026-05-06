@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 function SendIcon() {
   return (
@@ -8,11 +8,21 @@ function SendIcon() {
   )
 }
 
-export default function MessageInput({ onSend }) {
+export default function MessageInput({ onSend, onTyping }) {
   const [text, setText] = useState('')
+  const typingTimer = useRef(null)
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+  }
+
+  function handleChange(e) {
+    setText(e.target.value)
+    if (!typingTimer.current) {
+      onTyping?.()
+    }
+    clearTimeout(typingTimer.current)
+    typingTimer.current = setTimeout(() => { typingTimer.current = null }, 2000)
   }
 
   function submit() {
@@ -20,6 +30,8 @@ export default function MessageInput({ onSend }) {
     if (!trimmed) return
     onSend(trimmed)
     setText('')
+    clearTimeout(typingTimer.current)
+    typingTimer.current = null
   }
 
   return (
@@ -27,7 +39,7 @@ export default function MessageInput({ onSend }) {
       <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2">
         <input
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder="Message…"
           className="flex-1 bg-transparent text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none"

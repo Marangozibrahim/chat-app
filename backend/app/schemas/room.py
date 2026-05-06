@@ -14,6 +14,7 @@ class RoomOut(BaseModel):
     created_by: uuid.UUID | None
     created_at: datetime
     member_count: int = 0
+    last_message_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

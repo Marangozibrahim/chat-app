@@ -29,6 +29,19 @@ async def refresh_presence(redis: aioredis.Redis, room_id: uuid.UUID, user_id: u
     await set_online(redis, room_id, user_id)
 
 
+def _seen_key(room_id: uuid.UUID) -> str:
+    return f"seen:room:{room_id}"
+
+
+async def mark_seen(redis: aioredis.Redis, room_id: uuid.UUID, user_id: uuid.UUID, message_id: str):
+    await redis.hset(_seen_key(room_id), str(user_id), message_id)
+
+
+async def get_seen(redis: aioredis.Redis, room_id: uuid.UUID) -> dict[str, str]:
+    raw = await redis.hgetall(_seen_key(room_id))
+    return {k: v for k, v in raw.items()}
+
+
 async def get_online_user_ids(redis: aioredis.Redis, room_id: uuid.UUID) -> set[str]:
     now = time.time()
     stale_cutoff = now - STALE_SECONDS

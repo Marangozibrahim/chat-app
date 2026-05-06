@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function useChatSocket(roomId, token, onPresence) {
+export function useChatSocket(roomId, token, onPresence, onSeen) {
   const [messages, setMessages] = useState([])
+  const [typingUsers, setTypingUsers] = useState([])
   const wsRef = useRef(null)
+  const typingTimers = useRef({})
 
   useEffect(() => {
     if (!roomId || !token) return
@@ -21,11 +23,24 @@ export function useChatSocket(roomId, token, onPresence) {
         setMessages((prev) => [...prev, data])
       } else if (data.type === 'presence') {
         onPresence?.(data)
+      } else if (data.type === 'typing') {
+        const { user_id, username } = data
+        setTypingUsers((prev) => {
+          if (prev.find(u => u.user_id === user_id)) return prev
+          return [...prev, { user_id, username }]
+        })
+        clearTimeout(typingTimers.current[user_id])
+        typingTimers.current[user_id] = setTimeout(() => {
+          setTypingUsers((prev) => prev.filter(u => u.user_id !== user_id))
+        }, 3000)
+      } else if (data.type === 'seen') {
+        onSeen?.(data)
       }
     }
 
     return () => {
       clearInterval(pingInterval)
+      Object.values(typingTimers.current).forEach(clearTimeout)
       ws.close()
     }
   }, [roomId, token])
@@ -34,9 +49,17 @@ export function useChatSocket(roomId, token, onPresence) {
     wsRef.current?.send(JSON.stringify({ type: 'message', body }))
   }
 
+  function sendTyping() {
+    wsRef.current?.send(JSON.stringify({ type: 'typing' }))
+  }
+
+  function sendSeen(messageId) {
+    wsRef.current?.send(JSON.stringify({ type: 'seen', message_id: messageId }))
+  }
+
   function clearMessages() {
     setMessages([])
   }
 
-  return { messages, send, clearMessages }
+  return { messages, typingUsers, send, sendTyping, sendSeen, clearMessages }
 }

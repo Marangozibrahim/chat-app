@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getHistory } from '../api/messages'
-import { getRoomMembers } from '../api/rooms'
+import { getRoom, getRoomMembers } from '../api/rooms'
 import { useAuth } from '../context/AuthContext'
 import { useChatSocket } from '../hooks/useChatSocket'
 import { usePresence } from '../hooks/usePresence'
 import MessageList from '../components/MessageList'
 import MessageInput from '../components/MessageInput'
 import PresenceBadge from '../components/PresenceBadge'
+import TypingIndicator from '../components/TypingIndicator'
 import ThemeToggle from '../components/ThemeToggle'
 
 function BackIcon() {
@@ -20,20 +21,29 @@ function BackIcon() {
 
 export default function ChatPage() {
   const { roomId } = useParams()
-  const { token } = useAuth()
+  const { token, username } = useAuth()
   const navigate = useNavigate()
   const [history, setHistory] = useState([])
-  const [roomName, setRoomName] = useState('Room')
+  const [roomName, setRoomName] = useState('')
+  const [seenMap, setSeenMap] = useState({})
+
+  function handleSeen(data) {
+    if (data.username !== username) {
+      setSeenMap(prev => ({ ...prev, [data.username]: data.message_id }))
+    }
+  }
 
   const { members, setMembers, handlePresenceEvent } = usePresence([])
-  const { messages, send } = useChatSocket(roomId, token, handlePresenceEvent)
+  const { messages, typingUsers, send, sendTyping, sendSeen } = useChatSocket(roomId, token, handlePresenceEvent, handleSeen)
 
   useEffect(() => {
     async function load() {
-      const [histRes, membersRes] = await Promise.all([
+      const [roomRes, histRes, membersRes] = await Promise.all([
+        getRoom(roomId),
         getHistory(roomId),
         getRoomMembers(roomId),
       ])
+      setRoomName(roomRes.data.name)
       setHistory(histRes.data)
       setMembers(membersRes.data)
     }
@@ -42,9 +52,10 @@ export default function ChatPage() {
 
   const allMessages = [...history, ...messages]
 
+  const ownTyping = typingUsers.filter(u => u.username !== username)
+
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950">
-      {/* Header */}
       <header className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
         <button
           onClick={() => navigate('/rooms')}
@@ -53,14 +64,19 @@ export default function ChatPage() {
           <BackIcon />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{roomName}</h1>
+          <h1 className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{roomName || '…'}</h1>
           <PresenceBadge members={members} />
         </div>
         <ThemeToggle className="text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" />
       </header>
 
-      <MessageList messages={allMessages} />
-      <MessageInput onSend={send} />
+      <MessageList
+        messages={allMessages}
+        seenMap={seenMap}
+        onVisible={(id) => sendSeen(id)}
+      />
+      <TypingIndicator typingUsers={ownTyping} />
+      <MessageInput onSend={send} onTyping={sendTyping} />
     </div>
   )
 }

@@ -74,6 +74,26 @@ async def websocket_endpoint(ws: WebSocket, room_id: uuid.UUID, token: str = Que
                 })
                 await redis.publish(f"pubsub:room:{room_id_str}", payload)
 
+            elif msg_type == "typing":
+                typing_payload = json.dumps({
+                    "type": "typing",
+                    "user_id": str(user_id),
+                    "username": username,
+                })
+                await redis.publish(f"pubsub:room:{room_id_str}", typing_payload)
+
+            elif msg_type == "seen":
+                message_id = data.get("message_id", "")
+                if message_id:
+                    await presence_svc.mark_seen(redis, room_id, user_id, message_id)
+                    seen_payload = json.dumps({
+                        "type": "seen",
+                        "user_id": str(user_id),
+                        "username": username,
+                        "message_id": message_id,
+                    })
+                    await redis.publish(f"pubsub:room:{room_id_str}", seen_payload)
+
     except WebSocketDisconnect:
         pass
     finally:

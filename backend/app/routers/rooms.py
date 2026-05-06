@@ -24,6 +24,14 @@ async def create_room(body: RoomCreate, db: AsyncSession = Depends(get_db), curr
     return await room_svc.create_room(db, body.name, current_user.id)
 
 
+@router.get("/{room_id}", response_model=RoomOut)
+async def get_room(room_id: uuid.UUID, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+    room = await room_svc.get_room(db, room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
+
 @router.post("/{room_id}/join", status_code=204)
 async def join_room(room_id: uuid.UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     room = await db.get(Room, room_id)

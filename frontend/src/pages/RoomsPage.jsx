@@ -12,6 +12,22 @@ function PlusIcon() {
   )
 }
 
+function getLastVisit(roomId) {
+  const raw = localStorage.getItem(`visited:${roomId}`)
+  return raw ? new Date(raw) : null
+}
+
+function markVisited(roomId) {
+  localStorage.setItem(`visited:${roomId}`, new Date().toISOString())
+}
+
+function hasUnread(room) {
+  if (!room.last_message_at) return false
+  const last = getLastVisit(room.id)
+  if (!last) return true
+  return new Date(room.last_message_at) > last
+}
+
 export default function RoomsPage() {
   const [rooms, setRooms] = useState([])
   const [newName, setNewName] = useState('')
@@ -35,12 +51,12 @@ export default function RoomsPage() {
 
   async function handleJoin(roomId) {
     try { await joinRoom(roomId) } catch {}
+    markVisited(roomId)
     navigate(`/rooms/${roomId}`)
   }
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-950 flex flex-col">
-      {/* Top bar */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
         <span className="text-sm font-semibold text-zinc-900 dark:text-white tracking-tight">Chat</span>
         <div className="flex items-center gap-1">
@@ -60,7 +76,6 @@ export default function RoomsPage() {
           {username && <p className="text-xs text-zinc-400 mt-0.5">Signed in as <span className="text-zinc-600 dark:text-zinc-300">{username}</span></p>}
         </div>
 
-        {/* Create form */}
         <form onSubmit={handleCreate} className="flex gap-2 mb-6">
           <input
             value={newName}
@@ -78,24 +93,29 @@ export default function RoomsPage() {
 
         {error && <p className="text-red-500 text-xs mb-4">{error}</p>}
 
-        {/* Room list */}
         <div className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800 border border-zinc-100 dark:border-zinc-800 rounded-xl overflow-hidden">
           {rooms.length === 0 && (
             <p className="px-4 py-6 text-sm text-zinc-400 text-center">No rooms yet. Create one above.</p>
           )}
-          {rooms.map(r => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between px-4 py-3 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition cursor-pointer group"
-              onClick={() => handleJoin(r.id)}
-            >
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-white">{r.name}</p>
-                <p className="text-xs text-zinc-400 mt-0.5">{r.member_count} member{r.member_count !== 1 ? 's' : ''}</p>
+          {rooms.map(r => {
+            const unread = hasUnread(r)
+            return (
+              <div
+                key={r.id}
+                className="flex items-center justify-between px-4 py-3 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition cursor-pointer group"
+                onClick={() => handleJoin(r.id)}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {unread && <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
+                  <div className="min-w-0">
+                    <p className={`text-sm truncate ${unread ? 'font-semibold text-zinc-900 dark:text-white' : 'font-medium text-zinc-900 dark:text-white'}`}>{r.name}</p>
+                    <p className="text-xs text-zinc-400 mt-0.5">{r.member_count} member{r.member_count !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <span className="text-xs text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition shrink-0 ml-2">Join →</span>
               </div>
-              <span className="text-xs text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition">Join →</span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </main>
     </div>
