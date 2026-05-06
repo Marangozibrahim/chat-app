@@ -1,18 +1,16 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: chat
-      POSTGRES_PASSWORD: chat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
       POSTGRES_DB: chatdb
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chat -d chatdb"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chatdb"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -32,9 +30,9 @@ services:
       context: ./backend
       target: dev
     environment:
-      DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chatdb
+      DATABASE_URL: postgresql+asyncpg://postgres:1234@postgres:5432/chatdb
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: devsecret
+      JWT_SECRET: 8vL9kPqW2mX7rT5nY3bJ9vH6cF4dE2aZ1xW9vQ8rT7yU
       JWT_EXPIRE_MINUTES: "60"
     ports:
       - "8000:8000"
