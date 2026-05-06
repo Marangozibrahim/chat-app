@@ -34,10 +34,10 @@ export default function ChatPage() {
   const allMessages = [...history, ...messages]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--accent)', color: '#fff' }}>
-        <button onClick={() => navigate('/rooms')} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 18, cursor: 'pointer' }}>←</button>
-        <strong style={{ flex: 1 }}>Room</strong>
+    <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
+      <div className="flex items-center gap-3 px-4 py-3 bg-blue-600 text-white shrink-0">
+        <button onClick={() => navigate('/rooms')} className="text-xl leading-none hover:opacity-75 transition-opacity">←</button>
+        <strong className="flex-1">Room</strong>
         <ThemeToggle />
       </div>
       <PresenceBadge members={members} />

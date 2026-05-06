@@ -8,12 +8,12 @@ export default function MessageList({ messages }) {
   }, [messages])
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--bg)' }}>
-      {messages.map((m) => (
-        <div key={m.id} style={{ background: 'var(--surface)', padding: '6px 10px', borderRadius: 6, maxWidth: '70%', boxShadow: `0 1px 2px var(--shadow)` }}>
-          <strong style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.username}</strong>
-          <p style={{ margin: '2px 0 0', wordBreak: 'break-word', color: 'var(--text)' }}>{m.body}</p>
-          <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>{new Date(m.created_at).toLocaleTimeString()}</span>
+    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 bg-gray-100 dark:bg-gray-900">
+      {messages.map(m => (
+        <div key={m.id} className="bg-white dark:bg-gray-800 px-3 py-2 rounded-xl max-w-[70%] shadow-sm">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">{m.username}</p>
+          <p className="text-gray-900 dark:text-white wrap-break-word mt-0.5">{m.body}</p>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">{new Date(m.created_at).toLocaleTimeString()}</p>
         </div>
       ))}
       <div ref={bottomRef} />
