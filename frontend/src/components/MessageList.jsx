@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
 function CheckIcon({ double }) {
@@ -235,22 +235,69 @@ export default function MessageList({
   onDelete,
   editingId,
   onEditingIdChange,
+  onLoadMore,
+  hasMore,
+  loadingMore,
+  newMessageIndex,
 }) {
   const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
+  const newMessageRef = useRef(null);
   const { username } = useAuth();
 
   const lastSeenRef = useRef(null);
+  const prevLengthRef = useRef(messages.length);
+  const prevScrollHeightRef = useRef(0);
 
+  const mountedRef = useRef(false);
+
+  // Scroll to new-messages divider (or bottom if none) before first paint
+  useLayoutEffect(() => {
+    if (newMessageRef.current) {
+      newMessageRef.current.scrollIntoView({ block: "start" });
+    } else {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, []);
+
+  // Preserve scroll position when older messages are prepended
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const added = messages.length - prevLengthRef.current;
+    if (mountedRef.current && added > 0) {
+      const newScrollHeight = el.scrollHeight;
+      const delta = newScrollHeight - prevScrollHeightRef.current;
+      if (delta > 0) el.scrollTop += delta;
+    }
+    prevLengthRef.current = messages.length;
+    mountedRef.current = true;
+  }, [messages.length]);
+
+  // Smooth scroll to bottom + send seen when a new live message arrives
+  const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    if (messages.length > 0) {
-      const last = messages[messages.length - 1];
-      if (last.id !== lastSeenRef.current) {
-        lastSeenRef.current = last.id;
-        onVisible?.(last.id);
+    if (!lastMessageId) return;
+    if (lastMessageId !== lastSeenRef.current) {
+      lastSeenRef.current = lastMessageId;
+      onVisible?.(lastMessageId);
+      // Only smooth-scroll if already near bottom (don't yank user away while reading history)
+      const el = scrollRef.current;
+      if (el) {
+        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distFromBottom < 200) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
       }
     }
-  }, [messages]);
+  }, [lastMessageId]);
+
+  function handleScroll(e) {
+    const el = e.currentTarget;
+    if (el.scrollTop < 80 && hasMore && !loadingMore) {
+      prevScrollHeightRef.current = el.scrollHeight;
+      onLoadMore?.();
+    }
+  }
 
   const seenCursorIndex = (() => {
     const seenIds = Object.values(seenMap);
@@ -264,21 +311,46 @@ export default function MessageList({
   })();
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3"
+    >
+      {loadingMore && (
+        <div className="flex justify-center py-2">
+          <div className="flex gap-1">
+            {[0,1,2].map(i => (
+              <span key={i} className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+            ))}
+          </div>
+        </div>
+      )}
       {messages.map((m, idx) => {
         const isMe = m.username === username;
         const seen = isMe && seenCursorIndex >= idx;
+        const isNewStart = idx === newMessageIndex;
+        const newCount = newMessageIndex !== null ? messages.length - newMessageIndex : 0;
         return (
-          <MessageItem
-            key={m.id}
-            m={m}
-            isMe={isMe}
-            seen={seen}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            isEditing={editingId === m.id}
-            onEditingChange={(val) => onEditingIdChange(val ? m.id : null)}
-          />
+          <div key={m.id} className="flex flex-col">
+            {isNewStart && (
+              <div ref={newMessageRef} className="flex items-center gap-3 py-2 select-none">
+                <div className="flex-1 h-px bg-blue-400 dark:bg-blue-500" />
+                <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400 shrink-0">
+                  {newCount} new {newCount === 1 ? "message" : "messages"}
+                </span>
+                <div className="flex-1 h-px bg-blue-400 dark:bg-blue-500" />
+              </div>
+            )}
+            <MessageItem
+              m={m}
+              isMe={isMe}
+              seen={seen}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              isEditing={editingId === m.id}
+              onEditingChange={(val) => onEditingIdChange(val ? m.id : null)}
+            />
+          </div>
         );
       })}
       <div ref={bottomRef} />

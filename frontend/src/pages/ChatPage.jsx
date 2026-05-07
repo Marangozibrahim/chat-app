@@ -30,6 +30,9 @@ export default function ChatPage() {
   const [error, setError] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [initialSeenId, setInitialSeenId] = useState(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [newMessageIndex, setNewMessageIndex] = useState(null)
   const messageInputRef = useRef(null)
 
   function handleSeen(data) {
@@ -66,8 +69,24 @@ export default function ChatPage() {
     } catch {}
   }
 
+  async function loadMore() {
+    if (loadingMore || !hasMore || allMessages.length === 0) return
+    setLoadingMore(true)
+    try {
+      const oldest = allMessages[0].created_at
+      const res = await getHistory(roomId, oldest)
+      if (res.data.length === 0) {
+        setHasMore(false)
+      } else {
+        setHasMore(res.data.length === 50)
+        setAllMessages(prev => [...res.data, ...prev])
+      }
+    } catch {}
+    finally { setLoadingMore(false) }
+  }
+
   const { members, setMembers, handlePresenceEvent } = usePresence([])
-  const { messages, typingUsers, send, sendTyping, sendSeen } = useChatSocket(
+  const { messages, typingUsers, reconnecting, send, sendTyping, sendSeen } = useChatSocket(
     roomId, token, handlePresenceEvent, handleSeen, applyEdit, applyDelete, initialSeenId
   )
 
@@ -92,6 +111,13 @@ export default function ChatPage() {
         if (cancelled) return
         setRoomName(roomRes.data.name)
         setAllMessages(histRes.data)
+        setHasMore(histRes.data.length === 50)
+        const visited = localStorage.getItem(`visited:${roomId}`)
+        if (visited && histRes.data.length > 0) {
+          const visitedTime = new Date(visited)
+          const idx = histRes.data.findIndex(m => new Date(m.created_at) > visitedTime)
+          setNewMessageIndex(idx >= 0 ? idx : null)
+        }
         if (histRes.data.length > 0) {
           setInitialSeenId(histRes.data[histRes.data.length - 1].id)
         }
@@ -164,6 +190,12 @@ export default function ChatPage() {
         </div>
         <ThemeToggle className="text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" />
       </header>
+      {reconnecting && (
+        <div className="flex items-center justify-center gap-2 px-4 py-1.5 bg-yellow-50 dark:bg-yellow-950 border-b border-yellow-200 dark:border-yellow-800 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+          <span className="text-xs text-yellow-700 dark:text-yellow-400">Reconnecting…</span>
+        </div>
+      )}
 
       <MessageList
         messages={allMessages}
@@ -173,9 +205,13 @@ export default function ChatPage() {
         onDelete={handleDelete}
         editingId={editingId}
         onEditingIdChange={setEditingId}
+        onLoadMore={loadMore}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        newMessageIndex={newMessageIndex}
       />
       <TypingIndicator typingUsers={ownTyping} />
-      <MessageInput ref={messageInputRef} onSend={send} onTyping={sendTyping} onEditLast={handleEditLast} />
+      <MessageInput ref={messageInputRef} onSend={(body) => { setNewMessageIndex(null); send(body) }} onTyping={sendTyping} onEditLast={handleEditLast} />
     </div>
   )
 }
