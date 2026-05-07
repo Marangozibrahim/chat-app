@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getHistory, editMessage, deleteMessage } from '../api/messages'
 import { getRoom, getRoomMembers } from '../api/rooms'
@@ -29,6 +29,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const messageInputRef = useRef(null)
 
   function handleSeen(data) {
     if (data.username !== username) {
@@ -46,6 +47,7 @@ export default function ChatPage() {
 
   async function handleEdit(msg, newBody) {
     setEditingId(null)
+    messageInputRef.current?.focus()
     if (!newBody.trim() || newBody === msg.body) return
     try {
       await editMessage(roomId, msg.id, newBody.trim())
@@ -158,7 +160,7 @@ export default function ChatPage() {
         onEditingIdChange={setEditingId}
       />
       <TypingIndicator typingUsers={ownTyping} />
-      <MessageInput onSend={send} onTyping={sendTyping} onEditLast={handleEditLast} />
+      <MessageInput ref={messageInputRef} onSend={send} onTyping={sendTyping} onEditLast={handleEditLast} />
     </div>
   )
 }

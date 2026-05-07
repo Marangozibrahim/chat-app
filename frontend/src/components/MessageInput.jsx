@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 
 function SendIcon() {
   return (
@@ -8,9 +8,14 @@ function SendIcon() {
   )
 }
 
-export default function MessageInput({ onSend, onTyping, onEditLast }) {
+const MessageInput = forwardRef(function MessageInput({ onSend, onTyping, onEditLast }, ref) {
   const [text, setText] = useState('')
   const typingTimer = useRef(null)
+  const inputRef = useRef(null)
+
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus()
+  }))
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
@@ -39,6 +44,7 @@ export default function MessageInput({ onSend, onTyping, onEditLast }) {
     <div className="px-4 py-3 border-t border-zinc-100 dark:border-zinc-800 shrink-0">
       <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2">
         <input
+          ref={inputRef}
           value={text}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -55,4 +61,6 @@ export default function MessageInput({ onSend, onTyping, onEditLast }) {
       </div>
     </div>
   )
-}
+})
+
+export default MessageInput

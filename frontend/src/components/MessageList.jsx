@@ -58,15 +58,19 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChan
   const [editBody, setEditBody] = useState(m.body)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const inputRef = useRef(null)
+  const submittedRef = useRef(false)
 
   useEffect(() => {
     if (isEditing) {
       setEditBody(m.body)
+      submittedRef.current = false
       inputRef.current?.focus()
     }
   }, [isEditing])
 
   function submitEdit() {
+    if (submittedRef.current) return
+    submittedRef.current = true
     if (!editBody.trim()) {
       onEditingChange(false)
       setShowDeleteModal(true)
