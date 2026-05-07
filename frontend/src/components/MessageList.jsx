@@ -143,7 +143,7 @@ function MessageItem({
           onConfirm={() => {
             onDelete(m.id);
             setShowDeleteModal(false);
-            onEditingChange(false);
+            onEdit(m, m.body);
           }}
           onCancel={() => {
             setShowDeleteModal(false);
