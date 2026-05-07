@@ -15,8 +15,8 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 
 @router.get("", response_model=list[RoomOut])
-async def list_rooms(db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
-    return await room_svc.list_rooms(db)
+async def list_rooms(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await room_svc.list_rooms(db, current_user.id)
 
 
 @router.post("", response_model=RoomOut, status_code=201)

@@ -15,6 +15,7 @@ class RoomOut(BaseModel):
     created_at: datetime
     member_count: int = 0
     last_message_at: datetime | None = None
+    is_member: bool = False
 
     model_config = {"from_attributes": True}
 

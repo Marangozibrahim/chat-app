@@ -49,10 +49,12 @@ export default function RoomsPage() {
     catch (err) { setError(err.response?.data?.detail || 'Create failed') }
   }
 
-  async function handleJoin(roomId) {
-    try { await joinRoom(roomId) } catch {}
-    markVisited(roomId)
-    navigate(`/rooms/${roomId}`)
+  async function handleJoin(room) {
+    if (!room.is_member) {
+      try { await joinRoom(room.id) } catch {}
+    }
+    markVisited(room.id)
+    navigate(`/rooms/${room.id}`)
   }
 
   return (
@@ -103,7 +105,7 @@ export default function RoomsPage() {
               <div
                 key={r.id}
                 className="flex items-center justify-between px-4 py-3 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition cursor-pointer group"
-                onClick={() => handleJoin(r.id)}
+                onClick={() => handleJoin(r)}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   {unread && <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
