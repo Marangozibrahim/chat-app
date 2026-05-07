@@ -17,13 +17,6 @@ export function useChatSocket(roomId, token, onPresence, onSeen) {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
     }, 30000)
 
-    ws.onclose = (e) => {
-      console.error('[WS] closed', e.code, e.reason)
-    }
-
-    ws.onerror = (e) => {
-      console.error('[WS] error', e)
-    }
 
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
