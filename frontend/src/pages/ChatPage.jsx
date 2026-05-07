@@ -27,6 +27,7 @@ export default function ChatPage() {
   const [roomName, setRoomName] = useState('')
   const [seenMap, setSeenMap] = useState({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   function handleSeen(data) {
     if (data.username !== username) {
@@ -41,6 +42,7 @@ export default function ChatPage() {
     let cancelled = false
     async function load() {
       setLoading(true)
+      setError(false)
       try {
         const [roomRes, histRes, membersRes] = await Promise.all([
           getRoom(roomId),
@@ -51,6 +53,8 @@ export default function ChatPage() {
         setRoomName(roomRes.data.name)
         setHistory(histRes.data)
         setMembers(membersRes.data)
+      } catch {
+        if (!cancelled) setError(true)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -70,6 +74,18 @@ export default function ChatPage() {
           <span key={i} className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
         ))}
       </div>
+    </div>
+  )
+
+  if (error) return (
+    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 items-center justify-center gap-3">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400">Failed to load room.</p>
+      <button
+        onClick={() => navigate('/rooms')}
+        className="text-sm text-zinc-900 dark:text-white underline underline-offset-2"
+      >
+        Go back
+      </button>
     </div>
   )
 
