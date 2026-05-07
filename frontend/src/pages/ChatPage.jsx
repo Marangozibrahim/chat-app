@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getHistory, editMessage, deleteMessage } from '../api/messages'
-import { getRoom, getRoomMembers } from '../api/rooms'
+import { getRoom, getRoomMembers, getRoomSeen } from '../api/rooms'
 import { useAuth } from '../context/AuthContext'
 import { useChatSocket } from '../hooks/useChatSocket'
 import { usePresence } from '../hooks/usePresence'
@@ -29,6 +29,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [initialSeenId, setInitialSeenId] = useState(null)
   const messageInputRef = useRef(null)
 
   function handleSeen(data) {
@@ -67,7 +68,7 @@ export default function ChatPage() {
 
   const { members, setMembers, handlePresenceEvent } = usePresence([])
   const { messages, typingUsers, send, sendTyping, sendSeen } = useChatSocket(
-    roomId, token, handlePresenceEvent, handleSeen, applyEdit, applyDelete
+    roomId, token, handlePresenceEvent, handleSeen, applyEdit, applyDelete, initialSeenId
   )
 
   useEffect(() => {
@@ -82,15 +83,29 @@ export default function ChatPage() {
       setLoading(true)
       setError(false)
       try {
-        const [roomRes, histRes, membersRes] = await Promise.all([
+        const [roomRes, histRes, membersRes, seenRes] = await Promise.all([
           getRoom(roomId),
           getHistory(roomId),
           getRoomMembers(roomId),
+          getRoomSeen(roomId),
         ])
         if (cancelled) return
         setRoomName(roomRes.data.name)
         setAllMessages(histRes.data)
+        if (histRes.data.length > 0) {
+          setInitialSeenId(histRes.data[histRes.data.length - 1].id)
+        }
         setMembers(membersRes.data)
+        const userIdToUsername = {}
+        for (const m of membersRes.data) {
+          userIdToUsername[String(m.user_id)] = m.username
+        }
+        const initialSeen = {}
+        for (const [userId, messageId] of Object.entries(seenRes.data)) {
+          const uname = userIdToUsername[String(userId)]
+          if (uname) initialSeen[uname] = messageId
+        }
+        setSeenMap(initialSeen)
       } catch {
         if (!cancelled) setError(true)
       } finally {

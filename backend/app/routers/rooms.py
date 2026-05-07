@@ -45,6 +45,15 @@ async def leave_room(room_id: uuid.UUID, db: AsyncSession = Depends(get_db), cur
     await room_svc.leave_room(db, room_id, current_user.id)
 
 
+@router.get("/{room_id}/seen")
+async def get_seen(
+    room_id: uuid.UUID,
+    redis: aioredis.Redis = Depends(get_redis),
+    _: User = Depends(get_current_user),
+):
+    return await presence_svc.get_seen(redis, room_id)
+
+
 @router.get("/{room_id}/members", response_model=list[MemberOut])
 async def get_members(
     room_id: uuid.UUID,

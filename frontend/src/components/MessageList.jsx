@@ -239,21 +239,35 @@ export default function MessageList({
   const bottomRef = useRef(null);
   const { username } = useAuth();
 
+  const lastSeenRef = useRef(null);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     if (messages.length > 0) {
       const last = messages[messages.length - 1];
-      onVisible?.(last.id);
+      if (last.id !== lastSeenRef.current) {
+        lastSeenRef.current = last.id;
+        onVisible?.(last.id);
+      }
     }
   }, [messages]);
 
-  const seenByOthers = new Set(Object.values(seenMap));
+  const seenCursorIndex = (() => {
+    const seenIds = Object.values(seenMap);
+    if (seenIds.length === 0) return -1;
+    let max = -1;
+    for (const seenId of seenIds) {
+      const idx = messages.findIndex((m) => m.id === seenId);
+      if (idx > max) max = idx;
+    }
+    return max;
+  })();
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
-      {messages.map((m) => {
+      {messages.map((m, idx) => {
         const isMe = m.username === username;
-        const seen = isMe && seenByOthers.has(m.id);
+        const seen = isMe && seenCursorIndex >= idx;
         return (
           <MessageItem
             key={m.id}
