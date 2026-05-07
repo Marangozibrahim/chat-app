@@ -40,7 +40,11 @@ export default function RoomsPage() {
     catch { setError('Failed to load rooms') }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    const interval = setInterval(load, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   async function handleCreate(e) {
     e.preventDefault()
