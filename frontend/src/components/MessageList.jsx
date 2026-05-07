@@ -5,10 +5,7 @@ function CheckIcon({ double }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="inline">
       {double ? (
-        <>
-          <polyline points="1 12 6 17 13 8"/>
-          <polyline points="9 12 14 17 21 8"/>
-        </>
+        <><polyline points="1 12 6 17 13 8"/><polyline points="9 12 14 17 21 8"/></>
       ) : (
         <polyline points="5 12 10 17 19 7"/>
       )}
@@ -16,24 +13,54 @@ function CheckIcon({ double }) {
   )
 }
 
-function MessageItem({ m, isMe, seen, onEdit, onDelete }) {
-  const [editing, setEditing] = useState(false)
+function DeleteModal({ onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
+      <div
+        className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl p-6 w-72 flex flex-col gap-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <p className="text-sm font-semibold text-zinc-900 dark:text-white">Delete message?</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">This cannot be undone.</p>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-3 py-1.5 text-xs rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChange }) {
   const [editBody, setEditBody] = useState(m.body)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const inputRef = useRef(null)
 
   useEffect(() => {
-    if (editing) inputRef.current?.focus()
-  }, [editing])
+    if (isEditing) {
+      setEditBody(m.body)
+      inputRef.current?.focus()
+    }
+  }, [isEditing])
 
   function submitEdit() {
     if (!editBody.trim()) {
-      setEditing(false)
-      setConfirmDelete(true)
+      onEditingChange(false)
+      setShowDeleteModal(true)
       return
     }
     if (editBody !== m.body) onEdit(m, editBody)
-    setEditing(false)
+    else onEditingChange(false)
   }
 
   if (m.deleted) {
@@ -48,80 +75,71 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete }) {
   }
 
   return (
-    <div className={`flex flex-col gap-0.5 max-w-[72%] group ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
-      {!isMe && <span className="text-[11px] text-zinc-400 px-1">{m.username}</span>}
-
-      {editing ? (
-        <input
-          ref={inputRef}
-          value={editBody}
-          onChange={e => setEditBody(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') submitEdit()
-            if (e.key === 'Escape') setEditing(false)
-          }}
-          onBlur={submitEdit}
-          className="px-3 py-2 rounded-2xl text-sm bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 outline-none min-w-30"
+    <>
+      {showDeleteModal && (
+        <DeleteModal
+          onConfirm={() => { onDelete(m.id); setShowDeleteModal(false) }}
+          onCancel={() => setShowDeleteModal(false)}
         />
-      ) : (
-        <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
-          isMe
-            ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-br-sm'
-            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-bl-sm'
-        }`}>
-          {m.body}
-        </div>
       )}
+      <div className={`flex flex-col gap-0.5 max-w-[72%] group ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
+        {!isMe && <span className="text-[11px] text-zinc-400 px-1">{m.username}</span>}
 
-      <div className="flex items-center gap-1.5 px-1">
-        <span className="text-[10px] text-zinc-300 dark:text-zinc-600">
-          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          {m.edited_at && <span className="ml-1">(edited)</span>}
-        </span>
-        {isMe && (
-          <span className={seen ? 'text-blue-400' : 'text-zinc-300 dark:text-zinc-600'}>
-            <CheckIcon double={seen} />
-          </span>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={editBody}
+            onChange={e => setEditBody(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') submitEdit()
+              if (e.key === 'Escape') onEditingChange(false)
+            }}
+            onBlur={submitEdit}
+            className="px-3 py-2 rounded-2xl text-sm bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 outline-none min-w-30"
+          />
+        ) : (
+          <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+            isMe
+              ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-br-sm'
+              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-bl-sm'
+          }`}>
+            {m.body}
+          </div>
         )}
-        {isMe && !editing && !confirmDelete && (
-          <span className="hidden group-hover:flex items-center gap-1 ml-1">
-            <button
-              onClick={() => { setEditBody(m.body); setEditing(true) }}
-              className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="text-[10px] text-zinc-400 hover:text-red-500 transition"
-            >
-              Delete
-            </button>
+
+        <div className="flex items-center gap-1.5 px-1">
+          <span className="text-[10px] text-zinc-300 dark:text-zinc-600">
+            {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {m.edited_at && <span className="ml-1">(edited)</span>}
           </span>
-        )}
-        {isMe && confirmDelete && (
-          <span className="flex items-center gap-1 ml-1">
-            <span className="text-[10px] text-zinc-500 dark:text-zinc-400">Delete?</span>
-            <button
-              onClick={() => { onDelete(m.id); setConfirmDelete(false) }}
-              className="text-[10px] text-red-500 hover:text-red-600 transition"
-            >
-              Yes
-            </button>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
-            >
-              No
-            </button>
-          </span>
-        )}
+          {isMe && (
+            <span className={seen ? 'text-blue-400' : 'text-zinc-300 dark:text-zinc-600'}>
+              <CheckIcon double={seen} />
+            </span>
+          )}
+          {isMe && !isEditing && (
+            <span className="hidden group-hover:flex items-center gap-1 ml-1">
+              <button
+                onClick={() => onEditingChange(true)}
+                className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="text-[10px] text-zinc-400 hover:text-red-500 transition"
+              >
+                Delete
+              </button>
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 
-export default function MessageList({ messages, seenMap = {}, onVisible, onEdit, onDelete }) {
+export default function MessageList({ messages, seenMap = {}, onVisible, onEdit, onDelete, editingId, onEditingIdChange }) {
   const bottomRef = useRef(null)
   const { username } = useAuth()
 
@@ -148,6 +166,8 @@ export default function MessageList({ messages, seenMap = {}, onVisible, onEdit,
             seen={seen}
             onEdit={onEdit}
             onDelete={onDelete}
+            isEditing={editingId === m.id}
+            onEditingChange={(val) => onEditingIdChange(val ? m.id : null)}
           />
         )
       })}

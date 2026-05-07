@@ -8,12 +8,13 @@ function SendIcon() {
   )
 }
 
-export default function MessageInput({ onSend, onTyping }) {
+export default function MessageInput({ onSend, onTyping, onEditLast }) {
   const [text, setText] = useState('')
   const typingTimer = useRef(null)
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+    if (e.key === 'ArrowUp' && !text) { e.preventDefault(); onEditLast?.() }
   }
 
   function handleChange(e) {

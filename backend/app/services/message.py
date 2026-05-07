@@ -42,6 +42,8 @@ async def get_history(
             "username": m.user.username if m.user else None,
             "body": m.body,
             "created_at": m.created_at,
+            "edited_at": m.edited_at,
+            "deleted": m.deleted,
         }
         for m in reversed(messages)
     ]

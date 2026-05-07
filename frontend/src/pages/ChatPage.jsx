@@ -28,6 +28,7 @@ export default function ChatPage() {
   const [seenMap, setSeenMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [editingId, setEditingId] = useState(null)
 
   function handleSeen(data) {
     if (data.username !== username) {
@@ -44,10 +45,16 @@ export default function ChatPage() {
   }
 
   async function handleEdit(msg, newBody) {
+    setEditingId(null)
     if (!newBody.trim() || newBody === msg.body) return
     try {
       await editMessage(roomId, msg.id, newBody.trim())
     } catch {}
+  }
+
+  function handleEditLast() {
+    const last = [...allMessages].reverse().find(m => m.username === username && !m.deleted)
+    if (last) setEditingId(last.id)
   }
 
   async function handleDelete(msgId) {
@@ -147,10 +154,11 @@ export default function ChatPage() {
         onVisible={(id) => sendSeen(id)}
         onEdit={handleEdit}
         onDelete={handleDelete}
-        currentUsername={username}
+        editingId={editingId}
+        onEditingIdChange={setEditingId}
       />
       <TypingIndicator typingUsers={ownTyping} />
-      <MessageInput onSend={send} onTyping={sendTyping} />
+      <MessageInput onSend={send} onTyping={sendTyping} onEditLast={handleEditLast} />
     </div>
   )
 }
