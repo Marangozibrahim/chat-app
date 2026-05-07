@@ -53,7 +53,6 @@ export default function RoomsPage() {
     if (!room.is_member) {
       try { await joinRoom(room.id) } catch {}
     }
-    markVisited(room.id)
     navigate(`/rooms/${room.id}`)
   }
 

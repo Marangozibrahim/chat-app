@@ -39,6 +39,12 @@ export default function ChatPage() {
   const { messages, typingUsers, send, sendTyping, sendSeen } = useChatSocket(roomId, token, handlePresenceEvent, handleSeen)
 
   useEffect(() => {
+    return () => {
+      localStorage.setItem(`visited:${roomId}`, new Date().toISOString())
+    }
+  }, [roomId])
+
+  useEffect(() => {
     let cancelled = false
     async function load() {
       setLoading(true)
