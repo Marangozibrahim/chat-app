@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getHistory } from '../api/messages'
+import { getHistory, editMessage, deleteMessage } from '../api/messages'
 import { getRoom, getRoomMembers } from '../api/rooms'
 import { useAuth } from '../context/AuthContext'
 import { useChatSocket } from '../hooks/useChatSocket'
@@ -23,7 +23,7 @@ export default function ChatPage() {
   const { roomId } = useParams()
   const { token, username } = useAuth()
   const navigate = useNavigate()
-  const [history, setHistory] = useState([])
+  const [allMessages, setAllMessages] = useState([])
   const [roomName, setRoomName] = useState('')
   const [seenMap, setSeenMap] = useState({})
   const [loading, setLoading] = useState(true)
@@ -35,8 +35,31 @@ export default function ChatPage() {
     }
   }
 
+  function applyEdit(id, body, edited_at) {
+    setAllMessages(prev => prev.map(m => m.id === id ? { ...m, body, edited_at } : m))
+  }
+
+  function applyDelete(id) {
+    setAllMessages(prev => prev.map(m => m.id === id ? { ...m, deleted: true, body: '' } : m))
+  }
+
+  async function handleEdit(msg, newBody) {
+    if (!newBody.trim() || newBody === msg.body) return
+    try {
+      await editMessage(roomId, msg.id, newBody.trim())
+    } catch {}
+  }
+
+  async function handleDelete(msgId) {
+    try {
+      await deleteMessage(roomId, msgId)
+    } catch {}
+  }
+
   const { members, setMembers, handlePresenceEvent } = usePresence([])
-  const { messages, typingUsers, send, sendTyping, sendSeen } = useChatSocket(roomId, token, handlePresenceEvent, handleSeen)
+  const { messages, typingUsers, send, sendTyping, sendSeen } = useChatSocket(
+    roomId, token, handlePresenceEvent, handleSeen, applyEdit, applyDelete
+  )
 
   useEffect(() => {
     return () => {
@@ -57,7 +80,7 @@ export default function ChatPage() {
         ])
         if (cancelled) return
         setRoomName(roomRes.data.name)
-        setHistory(histRes.data)
+        setAllMessages(histRes.data)
         setMembers(membersRes.data)
       } catch {
         if (!cancelled) setError(true)
@@ -69,7 +92,14 @@ export default function ChatPage() {
     return () => { cancelled = true }
   }, [roomId])
 
-  const allMessages = [...history, ...messages]
+  useEffect(() => {
+    if (messages.length === 0) return
+    const last = messages[messages.length - 1]
+    setAllMessages(prev => {
+      if (prev.find(m => m.id === last.id)) return prev
+      return [...prev, last]
+    })
+  }, [messages])
 
   const ownTyping = typingUsers.filter(u => u.username !== username)
 
@@ -115,6 +145,9 @@ export default function ChatPage() {
         messages={allMessages}
         seenMap={seenMap}
         onVisible={(id) => sendSeen(id)}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        currentUsername={username}
       />
       <TypingIndicator typingUsers={ownTyping} />
       <MessageInput onSend={send} onTyping={sendTyping} />

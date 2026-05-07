@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function useChatSocket(roomId, token, onPresence, onSeen) {
+export function useChatSocket(roomId, token, onPresence, onSeen, onEdit, onDelete) {
   const [messages, setMessages] = useState([])
   const [typingUsers, setTypingUsers] = useState([])
   const wsRef = useRef(null)
@@ -36,6 +36,10 @@ export function useChatSocket(roomId, token, onPresence, onSeen) {
         }, 3000)
       } else if (data.type === 'seen') {
         onSeen?.(data)
+      } else if (data.type === 'message_edited') {
+        onEdit?.(data.id, data.body, data.edited_at)
+      } else if (data.type === 'message_deleted') {
+        onDelete?.(data.id)
       }
     }
 

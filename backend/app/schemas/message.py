@@ -11,5 +11,7 @@ class MessageOut(BaseModel):
     username: str | None
     body: str
     created_at: datetime
+    edited_at: datetime | None = None
+    deleted: bool = False
 
     model_config = {"from_attributes": True}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 function CheckIcon({ double }) {
@@ -16,7 +16,89 @@ function CheckIcon({ double }) {
   )
 }
 
-export default function MessageList({ messages, seenMap = {}, onVisible }) {
+function MessageItem({ m, isMe, seen, onEdit, onDelete }) {
+  const [editing, setEditing] = useState(false)
+  const [editBody, setEditBody] = useState(m.body)
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  function submitEdit() {
+    if (editBody.trim() && editBody !== m.body) onEdit(m, editBody)
+    setEditing(false)
+  }
+
+  if (m.deleted) {
+    return (
+      <div className={`flex flex-col gap-0.5 max-w-[72%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
+        {!isMe && <span className="text-[11px] text-zinc-400 px-1">{m.username}</span>}
+        <div className="px-3 py-2 rounded-2xl text-sm italic text-zinc-400 dark:text-zinc-600 bg-zinc-100 dark:bg-zinc-800">
+          Message deleted
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`flex flex-col gap-0.5 max-w-[72%] group ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
+      {!isMe && <span className="text-[11px] text-zinc-400 px-1">{m.username}</span>}
+
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={editBody}
+          onChange={e => setEditBody(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') submitEdit()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          onBlur={submitEdit}
+          className="px-3 py-2 rounded-2xl text-sm bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 outline-none min-w-30"
+        />
+      ) : (
+        <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+          isMe
+            ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-br-sm'
+            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-bl-sm'
+        }`}>
+          {m.body}
+        </div>
+      )}
+
+      <div className="flex items-center gap-1.5 px-1">
+        <span className="text-[10px] text-zinc-300 dark:text-zinc-600">
+          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {m.edited_at && <span className="ml-1">(edited)</span>}
+        </span>
+        {isMe && (
+          <span className={seen ? 'text-blue-400' : 'text-zinc-300 dark:text-zinc-600'}>
+            <CheckIcon double={seen} />
+          </span>
+        )}
+        {isMe && !editing && (
+          <span className="hidden group-hover:flex items-center gap-1 ml-1">
+            <button
+              onClick={() => { setEditBody(m.body); setEditing(true) }}
+              className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => onDelete(m.id)}
+              className="text-[10px] text-zinc-400 hover:text-red-500 transition"
+            >
+              Delete
+            </button>
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function MessageList({ messages, seenMap = {}, onVisible, onEdit, onDelete }) {
   const bottomRef = useRef(null)
   const { username } = useAuth()
 
@@ -36,26 +118,14 @@ export default function MessageList({ messages, seenMap = {}, onVisible }) {
         const isMe = m.username === username
         const seen = isMe && seenByOthers.has(m.id)
         return (
-          <div key={m.id} className={`flex flex-col gap-0.5 max-w-[72%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
-            {!isMe && (
-              <span className="text-[11px] text-zinc-400 px-1">{m.username}</span>
-            )}
-            <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
-              isMe
-                ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-br-sm'
-                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-bl-sm'
-            }`}>
-              {m.body}
-            </div>
-            <span className="flex items-center gap-1 text-[10px] text-zinc-300 dark:text-zinc-600 px-1">
-              {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              {isMe && (
-                <span className={seen ? 'text-blue-400' : 'text-zinc-300 dark:text-zinc-600'}>
-                  <CheckIcon double={seen} />
-                </span>
-              )}
-            </span>
-          </div>
+          <MessageItem
+            key={m.id}
+            m={m}
+            isMe={isMe}
+            seen={seen}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
         )
       })}
       <div ref={bottomRef} />

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,3 +45,29 @@ async def get_history(
         }
         for m in reversed(messages)
     ]
+
+
+async def edit_message(
+    db: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID, body: str
+) -> Message | None:
+    msg = await db.get(Message, message_id)
+    if not msg or msg.user_id != user_id or msg.deleted:
+        return None
+    msg.body = body
+    msg.edited_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(msg)
+    return msg
+
+
+async def delete_message(
+    db: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID
+) -> Message | None:
+    msg = await db.get(Message, message_id)
+    if not msg or msg.user_id != user_id or msg.deleted:
+        return None
+    msg.deleted = True
+    msg.body = ""
+    await db.commit()
+    await db.refresh(msg)
+    return msg
