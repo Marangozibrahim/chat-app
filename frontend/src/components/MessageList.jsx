@@ -68,6 +68,12 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChan
     }
   }, [isEditing])
 
+  function cancelEdit() {
+    if (submittedRef.current) return
+    submittedRef.current = true
+    onEdit(m, m.body)
+  }
+
   function submitEdit() {
     if (submittedRef.current) return
     submittedRef.current = true
@@ -77,7 +83,7 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChan
       return
     }
     if (editBody !== m.body) onEdit(m, editBody)
-    else onEditingChange(false)
+    else onEdit(m, m.body)
   }
 
   if (m.deleted) {
@@ -111,8 +117,8 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChan
             value={editBody}
             onChange={e => setEditBody(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter') submitEdit()
-              if (e.key === 'Escape') onEditingChange(false)
+              if (e.key === 'Enter') { e.preventDefault(); submitEdit() }
+              if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
             }}
             onBlur={submitEdit}
             className="px-3 py-2 rounded-2xl text-sm bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 outline-none min-w-30"
