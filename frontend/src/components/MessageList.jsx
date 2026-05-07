@@ -78,7 +78,6 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChan
     if (submittedRef.current) return
     submittedRef.current = true
     if (!editBody.trim()) {
-      onEditingChange(false)
       setShowDeleteModal(true)
       return
     }
@@ -104,8 +103,8 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChan
     <>
       {showDeleteModal && (
         <DeleteModal
-          onConfirm={() => { onDelete(m.id); setShowDeleteModal(false) }}
-          onCancel={() => setShowDeleteModal(false)}
+          onConfirm={() => { onDelete(m.id); setShowDeleteModal(false); onEditingChange(false) }}
+          onCancel={() => { setShowDeleteModal(false); onEdit(m, m.body) }}
         />
       )}
       <div className={`flex flex-col gap-0.5 max-w-[72%] group ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
