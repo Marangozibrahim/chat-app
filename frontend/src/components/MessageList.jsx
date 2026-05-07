@@ -14,6 +14,18 @@ function CheckIcon({ double }) {
 }
 
 function DeleteModal({ onConfirm, onCancel }) {
+  const deleteRef = useRef(null)
+
+  useEffect(() => {
+    deleteRef.current?.focus()
+    function onKey(e) {
+      if (e.key === 'Enter') onConfirm()
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
       <div
@@ -30,6 +42,7 @@ function DeleteModal({ onConfirm, onCancel }) {
             Cancel
           </button>
           <button
+            ref={deleteRef}
             onClick={onConfirm}
             className="px-3 py-1.5 text-xs rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
           >
@@ -70,6 +83,9 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete, isEditing, onEditingChan
         <div className="px-3 py-2 rounded-2xl text-sm italic text-zinc-400 dark:text-zinc-600 bg-zinc-100 dark:bg-zinc-800">
           Message deleted
         </div>
+        <span className="text-[10px] text-transparent px-1 select-none">
+          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
       </div>
     )
   }
