@@ -17,6 +17,14 @@ export function useChatSocket(roomId, token, onPresence, onSeen) {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
     }, 30000)
 
+    ws.onclose = (e) => {
+      console.error('[WS] closed', e.code, e.reason)
+    }
+
+    ws.onerror = (e) => {
+      console.error('[WS] error', e)
+    }
+
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
       if (data.type === 'message') {
@@ -45,16 +53,22 @@ export function useChatSocket(roomId, token, onPresence, onSeen) {
     }
   }, [roomId, token])
 
+  function safeSend(data) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(data))
+    }
+  }
+
   function send(body) {
-    wsRef.current?.send(JSON.stringify({ type: 'message', body }))
+    safeSend({ type: 'message', body })
   }
 
   function sendTyping() {
-    wsRef.current?.send(JSON.stringify({ type: 'typing' }))
+    safeSend({ type: 'typing' })
   }
 
   function sendSeen(messageId) {
-    wsRef.current?.send(JSON.stringify({ type: 'seen', message_id: messageId }))
+    safeSend({ type: 'seen', message_id: messageId })
   }
 
   function clearMessages() {
