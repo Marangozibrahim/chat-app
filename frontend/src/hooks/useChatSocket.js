@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function useChatSocket(roomId, token, onPresence, onSeen, onEdit, onDelete) {
+export function useChatSocket(roomId, token, onPresence, onSeen, onEdit, onDelete, initialSeenId) {
   const [messages, setMessages] = useState([])
   const [typingUsers, setTypingUsers] = useState([])
   const wsRef = useRef(null)
   const typingTimers = useRef({})
+  const initialSeenIdRef = useRef(initialSeenId)
+  const initialSeenSentRef = useRef(false)
+
+  useEffect(() => {
+    initialSeenIdRef.current = initialSeenId
+    if (initialSeenId && !initialSeenSentRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+      initialSeenSentRef.current = true
+      wsRef.current.send(JSON.stringify({ type: 'seen', message_id: initialSeenId }))
+    }
+  }, [initialSeenId])
 
   useEffect(() => {
     if (!roomId || !token) return
@@ -12,6 +22,13 @@ export function useChatSocket(roomId, token, onPresence, onSeen, onEdit, onDelet
     const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/rooms/${roomId}?token=${token}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
+
+    ws.onopen = () => {
+      if (initialSeenIdRef.current && !initialSeenSentRef.current) {
+        initialSeenSentRef.current = true
+        ws.send(JSON.stringify({ type: 'seen', message_id: initialSeenIdRef.current }))
+      }
+    }
 
     const pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
