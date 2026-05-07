@@ -19,6 +19,7 @@ function CheckIcon({ double }) {
 function MessageItem({ m, isMe, seen, onEdit, onDelete }) {
   const [editing, setEditing] = useState(false)
   const [editBody, setEditBody] = useState(m.body)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -26,7 +27,12 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete }) {
   }, [editing])
 
   function submitEdit() {
-    if (editBody.trim() && editBody !== m.body) onEdit(m, editBody)
+    if (!editBody.trim()) {
+      setEditing(false)
+      setConfirmDelete(true)
+      return
+    }
+    if (editBody !== m.body) onEdit(m, editBody)
     setEditing(false)
   }
 
@@ -77,7 +83,7 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete }) {
             <CheckIcon double={seen} />
           </span>
         )}
-        {isMe && !editing && (
+        {isMe && !editing && !confirmDelete && (
           <span className="hidden group-hover:flex items-center gap-1 ml-1">
             <button
               onClick={() => { setEditBody(m.body); setEditing(true) }}
@@ -86,10 +92,27 @@ function MessageItem({ m, isMe, seen, onEdit, onDelete }) {
               Edit
             </button>
             <button
-              onClick={() => onDelete(m.id)}
+              onClick={() => setConfirmDelete(true)}
               className="text-[10px] text-zinc-400 hover:text-red-500 transition"
             >
               Delete
+            </button>
+          </span>
+        )}
+        {isMe && confirmDelete && (
+          <span className="flex items-center gap-1 ml-1">
+            <span className="text-[10px] text-zinc-500 dark:text-zinc-400">Delete?</span>
+            <button
+              onClick={() => { onDelete(m.id); setConfirmDelete(false) }}
+              className="text-[10px] text-red-500 hover:text-red-600 transition"
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
+            >
+              No
             </button>
           </span>
         )}
