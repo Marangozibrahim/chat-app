@@ -38,7 +38,6 @@ def generate_presigned_put(room_id: str, filename: str, content_type: str) -> tu
         Params={
             "Bucket": settings.s3_bucket,
             "Key": key,
-            "ContentType": content_type,
         },
         ExpiresIn=settings.presigned_url_expiry,
     )

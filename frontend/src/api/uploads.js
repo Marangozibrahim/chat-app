@@ -11,7 +11,6 @@ export function getUploadUrl(roomId, filename, contentType, size) {
 
 export function putToS3(uploadUrl, file, onProgress) {
   return axios.put(uploadUrl, file, {
-    headers: { 'Content-Type': file.type },
     onUploadProgress: (e) =>
       onProgress?.(Math.round((e.loaded * 100) / e.total)),
   })
