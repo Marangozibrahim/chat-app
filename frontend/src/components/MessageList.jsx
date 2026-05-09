@@ -1,6 +1,33 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
+
+function isImageUrl(url) {
+  try {
+    const ext = new URL(url).pathname.split(".").pop().toLowerCase();
+    return IMAGE_EXTS.has(ext);
+  } catch {
+    return false;
+  }
+}
+
+function urlFilename(url) {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split("/").pop());
+  } catch {
+    return "file";
+  }
+}
+
+function AttachIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+    </svg>
+  );
+}
+
 function CheckIcon({ double }) {
   return (
     <svg
@@ -184,7 +211,29 @@ function MessageItem({
                 : "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-bl-sm"
             }`}
           >
-            {m.body}
+            {m.attachment_url && isImageUrl(m.attachment_url) && (
+              <a href={m.attachment_url} target="_blank" rel="noreferrer">
+                <img
+                  src={m.attachment_url}
+                  alt="attachment"
+                  className="max-w-xs rounded-xl mb-1 block"
+                />
+              </a>
+            )}
+            {m.attachment_url && !isImageUrl(m.attachment_url) && (
+              <a
+                href={m.attachment_url}
+                target="_blank"
+                rel="noreferrer"
+                className={`flex items-center gap-1.5 text-xs underline underline-offset-2 mb-1 ${
+                  isMe ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-500 dark:text-zinc-400"
+                }`}
+              >
+                <AttachIcon />
+                {urlFilename(m.attachment_url)}
+              </a>
+            )}
+            {m.body && <span>{m.body}</span>}
           </div>
         )}
 

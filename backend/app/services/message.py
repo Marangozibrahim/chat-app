@@ -16,6 +16,31 @@ async def persist_message(db: AsyncSession, room_id: uuid.UUID, user_id: uuid.UU
     return msg
 
 
+async def persist_message_with_attachment(
+    db: AsyncSession,
+    room_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: str,
+    attachment_url: str,
+) -> dict:
+    msg = Message(room_id=room_id, user_id=user_id, body=body, attachment_url=attachment_url)
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+    await db.refresh(msg, ["user"])
+    return {
+        "id": msg.id,
+        "room_id": msg.room_id,
+        "user_id": msg.user_id,
+        "username": msg.user.username if msg.user else None,
+        "body": msg.body,
+        "created_at": msg.created_at,
+        "edited_at": msg.edited_at,
+        "deleted": msg.deleted,
+        "attachment_url": msg.attachment_url,
+    }
+
+
 async def get_history(
     db: AsyncSession,
     room_id: uuid.UUID,
@@ -44,6 +69,7 @@ async def get_history(
             "created_at": m.created_at,
             "edited_at": m.edited_at,
             "deleted": m.deleted,
+            "attachment_url": m.attachment_url,
         }
         for m in reversed(messages)
     ]

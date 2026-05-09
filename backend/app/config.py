@@ -9,5 +9,12 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_expire_minutes: int = 60
 
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "eu-north-1"
+    s3_bucket: str = ""
+    max_upload_bytes: int = 52_428_800
+    presigned_url_expiry: int = 3600
+
 
 settings = Settings()

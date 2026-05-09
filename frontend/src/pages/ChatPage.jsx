@@ -211,7 +211,7 @@ export default function ChatPage() {
         newMessageIndex={newMessageIndex}
       />
       <TypingIndicator typingUsers={ownTyping} />
-      <MessageInput ref={messageInputRef} onSend={(body) => { setNewMessageIndex(null); send(body) }} onTyping={sendTyping} onEditLast={handleEditLast} />
+      <MessageInput ref={messageInputRef} roomId={roomId} onSend={(body) => { setNewMessageIndex(null); send(body) }} onTyping={sendTyping} onEditLast={handleEditLast} />
     </div>
   )
 }

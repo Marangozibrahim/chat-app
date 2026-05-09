@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.dependencies import close_redis, init_redis
-from app.routers import auth, messages, rooms
+from app.routers import auth, messages, rooms, uploads
 from app.routers import ws as ws_router
 from app.ws.manager import manager
 from app.ws.redis_listener import listen
@@ -33,6 +33,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(rooms.router)
 app.include_router(messages.router)
+app.include_router(uploads.router)
 app.include_router(ws_router.router)
 
 

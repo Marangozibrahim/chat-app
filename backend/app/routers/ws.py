@@ -71,6 +71,9 @@ async def websocket_endpoint(ws: WebSocket, room_id: uuid.UUID, token: str = Que
                     "username": username,
                     "body": msg.body,
                     "created_at": msg.created_at.isoformat(),
+                    "edited_at": None,
+                    "deleted": False,
+                    "attachment_url": None,
                 })
                 await redis.publish(f"pubsub:room:{room_id_str}", payload)
 

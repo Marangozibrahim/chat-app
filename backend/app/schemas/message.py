@@ -13,5 +13,6 @@ class MessageOut(BaseModel):
     created_at: datetime
     edited_at: datetime | None = None
     deleted: bool = False
+    attachment_url: str | None = None
 
     model_config = {"from_attributes": True}

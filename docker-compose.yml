@@ -34,6 +34,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: 8vL9kPqW2mX7rT5nY3bJ9vH6cF4dE2aZ1xW9vQ8rT7yU
       JWT_EXPIRE_MINUTES: "60"
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_REGION: "eu-north-1"
+      S3_BUCKET: ""
+      MAX_UPLOAD_BYTES: "52428800"
+      PRESIGNED_URL_EXPIRY: "3600"
     ports:
       - "8000:8000"
     volumes:
