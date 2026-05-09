@@ -1,10 +1,11 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { getUploadUrl, putToS3, confirmUpload } from '../api/uploads'
 
-const MAX_BYTES = 50 * 1024 * 1024
+const MAX_BYTES = 500 * 1024 * 1024
 
 const ALLOWED_TYPES = new Set([
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'video/mp4', 'video/webm', 'video/quicktime',
   'application/pdf', 'text/plain', 'application/zip',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -76,7 +77,7 @@ const MessageInput = forwardRef(function MessageInput({ onSend, onTyping, onEdit
       return
     }
     if (file.size > MAX_BYTES) {
-      setUploadError('File too large (max 50 MB).')
+      setUploadError('File too large (max 500 MB).')
       return
     }
     setStagedFile(file)
@@ -163,7 +164,7 @@ const MessageInput = forwardRef(function MessageInput({ onSend, onTyping, onEdit
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,application/pdf,text/plain,application/zip,.docx,.xlsx"
+          accept="image/*,video/mp4,video/webm,video/quicktime,application/pdf,text/plain,application/zip,.docx,.xlsx"
           className="hidden"
           onChange={handleFileChange}
         />

@@ -2,15 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
+const VIDEO_EXTS = new Set(["mp4", "webm", "mov"]);
 
-function isImageUrl(url) {
-  try {
-    const ext = new URL(url).pathname.split(".").pop().toLowerCase();
-    return IMAGE_EXTS.has(ext);
-  } catch {
-    return false;
-  }
+function getUrlExt(url) {
+  try { return new URL(url).pathname.split(".").pop().toLowerCase(); }
+  catch { return ""; }
 }
+
+function isImageUrl(url) { return IMAGE_EXTS.has(getUrlExt(url)); }
+function isVideoUrl(url) { return VIDEO_EXTS.has(getUrlExt(url)); }
 
 function urlFilename(url) {
   try {
@@ -220,7 +220,14 @@ function MessageItem({
                 />
               </a>
             )}
-            {m.attachment_url && !isImageUrl(m.attachment_url) && (
+            {m.attachment_url && isVideoUrl(m.attachment_url) && (
+              <video
+                src={m.attachment_url}
+                controls
+                className="max-w-xs rounded-xl mb-1 block"
+              />
+            )}
+            {m.attachment_url && !isImageUrl(m.attachment_url) && !isVideoUrl(m.attachment_url) && (
               <a
                 href={m.attachment_url}
                 target="_blank"

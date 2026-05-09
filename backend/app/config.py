@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = ""
     aws_region: str = "eu-north-1"
     s3_bucket: str = ""
-    max_upload_bytes: int = 52_428_800
+    max_upload_bytes: int = 524_288_000
     presigned_url_expiry: int = 3600
 
 
