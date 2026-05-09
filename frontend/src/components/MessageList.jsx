@@ -110,6 +110,7 @@ function MessageItem({
   onDelete,
   isEditing,
   onEditingChange,
+  onMediaLoad,
 }) {
   const [editBody, setEditBody] = useState(m.body);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -217,6 +218,7 @@ function MessageItem({
                   src={m.attachment_url}
                   alt="attachment"
                   className="max-w-xs rounded-xl mb-1 block"
+                  onLoad={onMediaLoad}
                 />
               </a>
             )}
@@ -225,6 +227,7 @@ function MessageItem({
                 src={m.attachment_url}
                 controls
                 className="max-w-xs rounded-xl mb-1 block"
+                onLoadedMetadata={onMediaLoad}
               />
             )}
             {m.attachment_url && !isImageUrl(m.attachment_url) && !isVideoUrl(m.attachment_url) && (
@@ -306,6 +309,13 @@ export default function MessageList({
   const prevScrollHeightRef = useRef(0);
 
   const mountedRef = useRef(false);
+
+  function onMediaLoad() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distFromBottom < 300) el.scrollTop = el.scrollHeight;
+  }
 
   // Scroll to new-messages divider (or bottom if none) before first paint
   useLayoutEffect(() => {
@@ -405,6 +415,7 @@ export default function MessageList({
               onDelete={onDelete}
               isEditing={editingId === m.id}
               onEditingChange={(val) => onEditingIdChange(val ? m.id : null)}
+              onMediaLoad={onMediaLoad}
             />
           </div>
         );
