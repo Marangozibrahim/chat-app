@@ -221,6 +221,7 @@ AWS_REGION            eu-north-1
 S3_BUCKET             <bucket name>
 MAX_UPLOAD_BYTES      524288000          # 500 MB
 PRESIGNED_URL_EXPIRY  3600
+CORS_ORIGINS_RAW      http://localhost:3000,http://localhost:5173  # CSV of allowed origins
 ```
 
 Two `.env` files, both gitignored:
@@ -244,7 +245,7 @@ Allowed upload types: `image/jpeg png gif webp`, `video/mp4 webm quicktime`, `ap
 
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push and PR to `main`:
 
-1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`.
+1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`. The suite covers auth (service + API), presence (online/offline, stale eviction, read receipts against real Redis), the Redis pub/sub fan-out that powers horizontal scaling, and the WebSocket handshake (JWT gating, presence broadcast, ping/pong).
 2. **frontend** — `npm install` + `npm run build`.
 3. **docker-build** — `docker compose build` to catch image regressions.
 

@@ -16,5 +16,13 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 524_288_000
     presigned_url_expiry: int = 3600
 
+    # Comma-separated list of allowed browser origins. "*" + credentials is
+    # invalid per the CORS spec, so set explicit origins in production.
+    cors_origins_raw: str = "http://localhost:3000,http://localhost:5173"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins_raw.split(",") if o.strip()]
+
 
 settings = Settings()

@@ -1,4 +1,5 @@
 import pytest_asyncio
+import redis.asyncio as aioredis
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -27,6 +28,16 @@ async def db_session_maker():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def redis_client():
+    """Per-test Redis bound to the current event loop, flushed before and after."""
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    await redis.flushdb()
+    yield redis
+    await redis.flushdb()
+    await redis.aclose()
 
 
 @pytest_asyncio.fixture
