@@ -41,6 +41,20 @@ async def _seed_user():
     return user_id
 
 
+@pytest.fixture(autouse=True)
+def fresh_module_engine():
+    """The WS endpoint uses the module-level AsyncSessionLocal/engine, whose pool
+    binds to the first event loop that touches it. Each TestClient runs in a new
+    loop, so dispose the pool before every test to avoid 'attached to a different
+    loop'. asyncio.run gives a throwaway loop just for the dispose() call.
+    """
+    from app.db.session import engine
+
+    asyncio.run(engine.dispose())
+    yield
+    asyncio.run(engine.dispose())
+
+
 @pytest.fixture
 def seeded_user_id():
     return asyncio.run(_seed_user())
