@@ -1,5 +1,9 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
+import jwt
+
+from app.config import settings
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -25,3 +29,17 @@ def test_refresh_token_not_valid_as_access():
 def test_refresh_round_trip():
     uid = uuid.uuid4()
     assert decode_refresh_token(create_refresh_token(uid)) == uid
+
+
+def test_expired_token_rejected():
+    uid = uuid.uuid4()
+    expired = jwt.encode(
+        {
+            "sub": str(uid),
+            "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
+            "type": "access",
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+    assert decode_token(expired) is None

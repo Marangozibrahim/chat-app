@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from app.config import settings
 
@@ -36,7 +37,7 @@ def _decode(token: str, expected_type: str) -> uuid.UUID | None:
         if payload.get("type", "access") != expected_type:
             return None
         return uuid.UUID(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+    except (PyJWTError, KeyError, ValueError):
         return None
 
 

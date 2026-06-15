@@ -50,7 +50,7 @@ File uploads require AWS S3 credentials in `.env` (see [Environment](#environmen
 | Layer       | Tech                                                         |
 |-------------|-------------------------------------------------------------|
 | API         | FastAPI 0.115, SQLAlchemy 2.0 (async), asyncpg              |
-| Auth        | JWT (`python-jose`), password hashing via `bcrypt` directly  |
+| Auth        | JWT (`PyJWT`), password hashing via `bcrypt` directly        |
 | Real-time   | WebSockets, Redis pub/sub                                    |
 | Presence    | Redis `HSET` + `ZSET`                                        |
 | Storage     | AWS S3 (boto3, presigned URLs)                               |
@@ -269,7 +269,7 @@ Known tradeoffs (deliberate, called out rather than hidden):
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push and PR to `main`:
 
 1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`. The suite covers auth (service + API), presence (online/offline, stale eviction, read receipts against real Redis), the Redis pub/sub fan-out that powers horizontal scaling, and the WebSocket handshake (JWT gating, presence broadcast, ping/pong).
-2. **frontend** — `npm install` + `npm run build`.
+2. **frontend** — `npm install`, `npm test` (Vitest: axios refresh-on-401 interceptor + AuthContext token lifecycle), then `npm run build`.
 3. **docker-build** — `docker compose build` to catch image regressions.
 
 ---
