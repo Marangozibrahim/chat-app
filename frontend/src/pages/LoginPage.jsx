@@ -16,7 +16,7 @@ export default function LoginPage() {
     setError('')
     try {
       const res = await login(username, password)
-      loginUser(res.data.access_token, username)
+      loginUser(res.data.access_token, username, res.data.refresh_token)
       navigate('/rooms')
     } catch {
       setError('Invalid credentials')

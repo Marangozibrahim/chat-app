@@ -1,3 +1,4 @@
+import pytest
 import pytest_asyncio
 import redis.asyncio as aioredis
 from httpx import ASGITransport, AsyncClient
@@ -9,6 +10,25 @@ from app.config import settings
 from app.db.base import Base
 from app.dependencies import get_db
 from app.main import app
+from app.rate_limit import limiter
+
+
+@pytest.fixture(autouse=True)
+def disable_rate_limit():
+    """Most tests fire many requests from the same client IP; the per-route
+    limits would spuriously trip them. Disable globally, opt back in with the
+    `enable_rate_limit` fixture for the dedicated rate-limit test.
+    """
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
+
+
+@pytest.fixture
+def enable_rate_limit():
+    limiter.enabled = True
+    yield
+    limiter.enabled = False
 
 
 @pytest_asyncio.fixture(scope="function")

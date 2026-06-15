@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     redis_url: str
     jwt_secret: str
     jwt_expire_minutes: int = 60
+    jwt_refresh_expire_days: int = 30
 
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
@@ -15,6 +16,7 @@ class Settings(BaseSettings):
     s3_bucket: str = ""
     max_upload_bytes: int = 524_288_000
     presigned_url_expiry: int = 3600
+    max_message_chars: int = 4000
 
     # Comma-separated list of allowed browser origins. "*" + credentials is
     # invalid per the CORS spec, so set explicit origins in production.

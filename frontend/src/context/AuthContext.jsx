@@ -6,9 +6,10 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('token'))
   const [username, setUsername] = useState(() => localStorage.getItem('username'))
 
-  function loginUser(token, username) {
+  function loginUser(token, username, refreshToken) {
     localStorage.setItem('token', token)
     localStorage.setItem('username', username)
+    if (refreshToken) localStorage.setItem('refresh_token', refreshToken)
     setToken(token)
     setUsername(username)
   }
@@ -16,6 +17,7 @@ export function AuthProvider({ children }) {
   function logout() {
     localStorage.removeItem('token')
     localStorage.removeItem('username')
+    localStorage.removeItem('refresh_token')
     setToken(null)
     setUsername(null)
   }

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import redis.asyncio as aioredis
+from app.config import settings
 from app.db.session import AsyncSessionLocal
 from app.dependencies import get_redis_pool
 from app.services.auth import decode_token
@@ -60,6 +61,8 @@ async def websocket_endpoint(ws: WebSocket, room_id: uuid.UUID, token: str = Que
                 body = data.get("body", "").strip()
                 if not body:
                     continue
+                if len(body) > settings.max_message_chars:
+                    body = body[: settings.max_message_chars]
                 async with AsyncSessionLocal() as db:
                     msg = await message_svc.persist_message(db, room_id, user_id, body)
 

@@ -3,10 +3,11 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import redis.asyncio as aioredis
+from app.config import settings
 from app.dependencies import get_current_user, get_db, get_redis
 from app.models.user import User
 from app.schemas.message import MessageOut
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/rooms", tags=["messages"])
 
 
 class MessageEdit(BaseModel):
-    body: str
+    body: str = Field(min_length=1, max_length=settings.max_message_chars)
 
 
 @router.get("/{room_id}/messages", response_model=list[MessageOut])

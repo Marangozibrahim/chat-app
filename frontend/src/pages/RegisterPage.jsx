@@ -17,7 +17,7 @@ export default function RegisterPage() {
     setError('')
     try {
       const res = await register(username, email, password)
-      loginUser(res.data.access_token, username)
+      loginUser(res.data.access_token, username, res.data.refresh_token)
       navigate('/rooms')
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed')

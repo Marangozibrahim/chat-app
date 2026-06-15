@@ -14,7 +14,9 @@ The interesting part isn't the chat — it's that the entire real-time layer is 
 - **Seamless history + live handoff** — cursor-based pagination (`WHERE created_at < :before ORDER BY created_at DESC`) backed by a composite index. History loads over REST on join, then the WebSocket takes over for live messages with no gap and no duplicates.
 - **Direct-to-S3 uploads** — the backend only ever hands out presigned PUT URLs; file bytes never pass through the API. Supports images, video (`<video controls>` inline), PDFs, and documents up to 500 MB.
 - **Resilient client** — exponential-backoff WebSocket reconnect (1s → 30s cap), scroll-position-preserving infinite scroll, an unread-messages divider, dark/light theming, and a "Reconnecting…" banner.
-- **Production-minded** — health check endpoint, GitHub Actions CI (migrations + pytest + frontend build + docker build), Alembic migrations, and a documented AWS EC2 deployment.
+- **Access + refresh JWTs** — short-lived access token (60 min) plus a long-lived refresh token (30 days). The axios client transparently refreshes on a 401 and retries the original request (single-flight, so a burst of 401s triggers one refresh), keeping users logged in without a hard mid-session logout. Tokens are typed, so a refresh token can't be used as an access token and vice versa.
+- **Rate limiting + input caps** — Redis-backed per-IP limits on auth routes (slowapi) hold across all workers, blunting brute-force and signup spam. Message bodies are length-capped at the schema and WebSocket layers.
+- **Production-minded** — explicit CORS allowlist, health check endpoint, GitHub Actions CI (migrations + pytest + frontend build + docker build), Alembic migrations, and a documented AWS EC2 deployment.
 
 ---
 
@@ -118,7 +120,7 @@ dependencies.py      get_db / get_redis / get_current_user; Redis pool singleton
 models/              SQLAlchemy models: user, room, room_member, message
 schemas/             Pydantic request/response schemas
 routers/
-  auth.py            register / login → JWT
+  auth.py            register / login / refresh → JWT (rate-limited)
   rooms.py           rooms CRUD, members + online status, seen state
   messages.py        cursor-paginated history, edit (PATCH), delete (DELETE)
   uploads.py         presigned upload URL + confirm-upload
@@ -214,13 +216,15 @@ Backend settings are read from `.env` via Pydantic `BaseSettings`:
 DATABASE_URL          postgresql+asyncpg://postgres:<pass>@postgres:5432/chatdb
 REDIS_URL             redis://redis:6379/0
 JWT_SECRET            <secret>
-JWT_EXPIRE_MINUTES    60
+JWT_EXPIRE_MINUTES    60                 # access token lifetime
+JWT_REFRESH_EXPIRE_DAYS 30               # refresh token lifetime
 AWS_ACCESS_KEY_ID     <iam key>          # optional — uploads only
 AWS_SECRET_ACCESS_KEY <iam secret>       # optional — uploads only
 AWS_REGION            eu-north-1
 S3_BUCKET             <bucket name>
 MAX_UPLOAD_BYTES      524288000          # 500 MB
 PRESIGNED_URL_EXPIRY  3600
+MAX_MESSAGE_CHARS     4000               # max chat message length
 CORS_ORIGINS_RAW      http://localhost:3000,http://localhost:5173  # CSV of allowed origins
 ```
 

@@ -6,7 +6,37 @@ async def test_register_returns_token(client):
     assert resp.status_code == 201
     body = resp.json()
     assert body["access_token"]
+    assert body["refresh_token"]
     assert body["token_type"] == "bearer"
+
+
+async def test_refresh_returns_new_access_token(client):
+    reg = await client.post(
+        "/auth/register",
+        json={"username": "rafa", "email": "rafa@example.com", "password": "pw123456"},
+    )
+    refresh_token = reg.json()["refresh_token"]
+
+    resp = await client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert resp.status_code == 200
+    assert resp.json()["access_token"]
+
+
+async def test_refresh_rejects_access_token(client):
+    """An access token must not be accepted at the refresh endpoint."""
+    reg = await client.post(
+        "/auth/register",
+        json={"username": "eve", "email": "eve@example.com", "password": "pw123456"},
+    )
+    access_token = reg.json()["access_token"]
+
+    resp = await client.post("/auth/refresh", json={"refresh_token": access_token})
+    assert resp.status_code == 401
+
+
+async def test_refresh_rejects_garbage(client):
+    resp = await client.post("/auth/refresh", json={"refresh_token": "not-a-token"})
+    assert resp.status_code == 401
 
 
 async def test_register_duplicate_username(client):
