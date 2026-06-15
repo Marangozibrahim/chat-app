@@ -245,6 +245,25 @@ Allowed upload types: `image/jpeg png gif webp`, `video/mp4 webm quicktime`, `ap
 
 ---
 
+## Security
+
+What's in place:
+
+- **Password hashing** with `bcrypt` (per-password salt), never stored or logged in plaintext.
+- **Typed JWTs** — access and refresh tokens carry a `type` claim, so a refresh token can't be replayed as an access token (and vice versa). Short access lifetime (60 min) limits the window of a leaked access token.
+- **Per-IP rate limiting** (slowapi, Redis-backed) on auth routes to blunt brute-force and signup spam, enforced across all workers.
+- **Explicit CORS allowlist** — `allow_origins=["*"]` with credentials is invalid per the CORS spec and unsafe, so origins are configured explicitly via `CORS_ORIGINS_RAW`.
+- **Input caps** — message bodies are length-limited at the schema and WebSocket layers; React escapes rendered message bodies by default (no `dangerouslySetInnerHTML`), so message content isn't an XSS vector.
+- **Membership checks** on room messaging and uploads (403 if not a member).
+
+Known tradeoffs (deliberate, called out rather than hidden):
+
+- **Tokens live in `localStorage`.** This is common in SPAs but is readable by any injected JavaScript, so it does not fully mitigate XSS — and the long-lived refresh token makes that more costly than an access token alone. The hardened approach is to store the **refresh token in an `HttpOnly` + `Secure` + `SameSite` cookie** (unreadable by JS) and keep only the short-lived access token in memory; that adds CSRF surface, which a `SameSite` policy plus a CSRF token would cover. Left as localStorage here to keep the auth flow simple for a demo.
+- **WebSocket auth passes the JWT as a query parameter** (`/ws/rooms/{id}?token=…`) because the browser WebSocket API can't set custom headers on the upgrade. Query strings can land in server/proxy logs, so in production this should be paired with short token TTLs and log scrubbing, or a short-lived single-use WS ticket exchanged over REST first.
+- **JWTs are stateless** — logout clears client storage but does not revoke a token server-side. Immediate revocation would need a token blocklist (e.g. in Redis) or rotating the signing secret.
+
+---
+
 ## Testing & CI
 
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push and PR to `main`:
