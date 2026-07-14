@@ -1,0 +1,38 @@
+# Production override for EC2. Use together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#
+# Swaps dev Docker targets (uvicorn --reload, Vite dev server) for built
+# production images, and drops backend/frontend's host port publish
+# entirely — nginx reaches them over the internal docker network by
+# service name, so they don't need to be reachable from the host at all
+# in prod. The base file already binds postgres/redis/backend/frontend
+# to 127.0.0.1, so nginx (80/443) is the only thing internet-reachable
+# either way; this removes the loopback listeners too for belt-and-braces.
+#
+# `!reset` requires Docker Compose v2.24+ (Jan 2024). Run `docker compose
+# -f docker-compose.yml -f docker-compose.prod.yml config` after any change
+# here and confirm backend/frontend show no `ports:` in the output.
+services:
+  backend:
+    build:
+      target: prod
+    ports: !reset []
+    restart: unless-stopped
+
+  frontend:
+    build:
+      target: prod
+    ports: !reset []
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  nginx:
+    restart: unless-stopped
+
+  certbot:
+    restart: unless-stopped
