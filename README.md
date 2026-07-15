@@ -43,6 +43,8 @@ docker compose exec backend alembic upgrade head
 
 File uploads require AWS S3 credentials in `.env` (see [Environment](#environment-variables)). The app runs fine without them — only attachments will fail.
 
+The compose file also defines an edge `nginx` + `certbot` pair used for the [EC2 TLS deployment](#deployment-aws-ec2) — ignore them for local dev and hit the app directly via the URLs above; `nginx` won't come up cleanly without certs.
+
 ---
 
 ## Stack
@@ -276,7 +278,20 @@ GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on ev
 
 ## Deployment (AWS EC2)
 
-Deployed on an EC2 `t3.micro` (Ubuntu 24.04) running `docker-compose` directly. Security group opens ports `22, 80, 443, 3000, 8000`. For browser clients to reach the backend, `VITE_API_URL` and `VITE_WS_URL` in `docker-compose.yml` must point to the EC2 public IP rather than `localhost`. When fronting with an ALB, enable WebSocket support and set the idle timeout ≥ 3600s.
+Deployed on an EC2 `t3.micro` (Ubuntu 24.04) running `docker-compose` directly behind an `nginx` + Let's Encrypt TLS edge proxy, live at `https://chatapp.ibrahimmarangoz.com`.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend alembic upgrade head
+```
+
+`docker-compose.prod.yml` builds the prod Docker targets (gunicorn backend, static-build frontend served by nginx) and strips backend/frontend/postgres/redis port publishing entirely — the edge `nginx` service (80/443) is the only thing reachable from outside the box. The frontend calls the API/WS same-origin (relative `/api`, `location.host` for WS), so no `VITE_API_URL`/`VITE_WS_URL` is needed. Security group only needs `22, 80, 443` open.
+
+**First-time TLS bootstrap** on a fresh box: run `nginx/init-letsencrypt.sh` — it issues a throwaway self-signed cert so `nginx` can start, requests a real cert from Let's Encrypt over the webroot HTTP-01 challenge, then reloads nginx. The `certbot` service (already in the base `docker-compose.yml`) renews the cert automatically every 12h afterward.
+
+There are two nginx hops in front of the backend: the edge `nginx` (TLS termination, `nginx/conf.d/app.conf`) proxies to the `frontend` container, whose own nginx (`frontend/nginx.conf`, baked into the prod image) serves the built SPA and forwards `/api` and `/ws` to `backend:8000`. Both hops append to `X-Forwarded-For`, so the backend's rate limiter reads the leftmost entry rather than the raw socket peer to get the real client IP.
+
+Note: the base `docker-compose.yml` (used for local dev too) already defines the `nginx`/`certbot` services. They aren't needed for local development — use `localhost:3000`/`localhost:8000` directly — and `nginx` won't start cleanly without certs unless `init-letsencrypt.sh` has been run.
 
 ---
 
