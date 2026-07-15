@@ -179,6 +179,21 @@ pages/
   AdminPage.jsx      /admin worker dashboard, 5s poll, token in sessionStorage
 ```
 
+### Load testing (`loadtest/`, `backend/scripts/`)
+
+```
+loadtest/
+  Dockerfile          python:3.12-slim + locust + websocket-client
+  requirements.txt
+  locustfile.py        ChatUser: custom WS client via events.request.fire(),
+                        reads the shared fixture, ping/message tasks
+backend/scripts/
+  db_seed.py           direct-to-Postgres seeder (bypasses register's rate limit,
+                        mints 24h tokens) — shared by both tools below
+  load_test.py          standalone asyncio CLI load generator, no GUI/distribution
+  .loadtest_users.json  gitignored fixture both tools read
+```
+
 ---
 
 ## Notable Implementation Details
@@ -319,12 +334,38 @@ python backend/scripts/load_test.py --users 30 --duration 60 --admin-token <ADMI
 
 Run `python backend/scripts/load_test.py --help` for all flags (`--rooms`, `--msg-rate`, `--ramp-up`, `--duration`, `--base-url`).
 
-### Testing at real scale (100s–1000s of users)
+### Testing at real scale (100s–1000s of users) — Locust GUI
 
-Two things stop `--seed-users` + `localhost:3000` from scaling past a few hundred users:
+`--seed-users` + `python load_test.py` doesn't scale past a few hundred users well: registration is rate-limited to 5/min per IP (seeding 1000 users would take ~3.6h), and on Windows, `localhost:3000` routes through Docker Desktop's host port-forwarding relay, which has its own concurrency ceiling well under 1000 (connections past it silently hang instead of failing). Both are solved the same way `load_test.py`'s scale mode solves them (see below) — but for real scale with a live GUI and the ability to add more load-generating capacity on the fly, use **Locust** (`loadtest/`) instead of the CLI script:
 
-- **Registration is rate-limited to 5/min per IP.** Seeding 1000 users through the real `/auth/register` endpoint would take ~3.6h. Use `backend/scripts/db_seed.py` instead — it writes users, room memberships, and JWTs directly to Postgres, bypassing the endpoint (and its rate limit) entirely. Minutes instead of hours. `pytest`'s `test_auth_api.py` already covers the register endpoint itself, so this doesn't lose coverage — the thing you're actually testing is the WS fan-out, not signup. It also mints access tokens with a 24h lifetime instead of the normal 60-minute one, so a seeded pool survives a whole day of testing (letting it expire mid-run means every reconnect falls back to the rate-limited `/auth/refresh` endpoint, capping recovery at 30/min regardless of how many users you're simulating — a real footgun we hit and fixed while building this).
-- **`localhost:3000` on Windows goes through Docker Desktop's host port-forwarding relay**, which has its own concurrency ceiling well under 1000 — unrelated to the app, but it'll make connections silently stall forever past a few hundred. Run the load generator *inside* the compose network instead, talking to `backend:8000` directly (no host relay in the path). Pass `--api-prefix ""` since REST routes have no `/api` prefix without Vite/nginx in front to add one.
+```bash
+# 1. Seed directly in Postgres (bypasses the rate limit, mints 24h tokens
+#    so the pool survives a full day of testing — see below for why)
+docker compose exec backend python scripts/db_seed.py --users 1000 --rooms 50
+
+# 2. Bring up the scaled backend + Locust master/worker pair
+docker compose -f docker-compose.yml -f docker-compose.loadtest.yml \
+  up --build --scale backend=3 --scale locust-worker=3
+
+# 3. Open Locust's own web UI
+open http://localhost:8089
+```
+
+Set "Number of users" and "Spawn rate" in the Locust UI, hit Start — live charts (requests/s, response times, failure rate), adjustable mid-run, no restart needed to change the target user count. Need more load-generating throughput? Scale workers up on the fly and Locust's master auto-discovers them:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d --scale locust-worker=8
+```
+
+`loadtest/locustfile.py` defines a `ChatUser` that opens a real WebSocket to `/ws/rooms/{id}` using a randomly-picked cached user + room from the same `.loadtest_users.json` fixture `db_seed.py` produces, then sends `ping`/`message` at Locust-controlled pacing. No off-the-shelf Locust WebSocket plugin exists for this Locust version, so it's a small custom `User` class using `websocket-client` + Locust's own `events.request.fire()` — the documented, standard way Locust supports any non-HTTP protocol (same pattern real deployments use for gRPC, Kafka, raw sockets, etc).
+
+Both the Locust master and its workers talk to `backend:8000` directly inside the compose network — same reasoning as the CLI script's scale mode: sidesteps the Windows relay bottleneck entirely, and Docker's embedded DNS still round-robins across scaled `backend` replicas the same way it does for a real browser.
+
+Cross-check with the app's own dashboard at the same time: `http://localhost:3000/admin` (there's a "Load Test (Locust) →" link on that page once `locust-master` is running) shows `worker_count`, live `total_connections`, and `active_rooms` from the app's side, right next to Locust's view of the traffic it's generating.
+
+### Testing at scale from the CLI (no GUI needed)
+
+For a quick scale test without spinning up Locust, `load_test.py` supports the same two fixes directly:
 
 ```bash
 docker compose exec backend python scripts/db_seed.py --users 1000 --rooms 50
@@ -336,7 +377,7 @@ docker run --rm --network chat-app_default -v "${PWD}/backend/scripts:/scripts" 
    --admin-token <ADMIN_TOKEN>"
 ```
 
-At high user counts, also widen `--rooms` so per-room broadcast fan-out doesn't blow up — e.g. 1000 users in 3 rooms means every message fans out to ~333 sockets; 1000 users in 50 rooms (~20/room) keeps delivery volume sane. Lower `--msg-rate` for the first big run too.
+At high user counts, widen `--rooms` so per-room broadcast fan-out doesn't blow up — e.g. 1000 users in 3 rooms means every message fans out to ~333 sockets; 1000 users in 50 rooms (~20/room) keeps delivery volume sane. Lower `--msg-rate` for the first big run too.
 
 ---
 

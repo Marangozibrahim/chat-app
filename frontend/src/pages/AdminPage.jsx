@@ -42,7 +42,18 @@ export default function AdminPage() {
     <div className="min-h-screen bg-white dark:bg-zinc-950 flex flex-col">
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
         <span className="text-sm font-semibold text-zinc-900 dark:text-white tracking-tight">Worker Dashboard</span>
-        <ThemeToggle className="text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" />
+        <div className="flex items-center gap-1">
+          <a
+            href="http://localhost:8089"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            title="Only reachable when docker-compose.loadtest.yml's locust-master service is running"
+          >
+            Load Test (Locust) →
+          </a>
+          <ThemeToggle className="text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" />
+        </div>
       </header>
 
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-8">

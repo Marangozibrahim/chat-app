@@ -1,17 +1,42 @@
 # Override for scaling the dev backend locally to watch the multi-worker
-# fan-out under load (see /admin dashboard + backend/scripts/load_test.py).
+# fan-out under load (see /admin dashboard + backend/scripts/load_test.py),
+# plus a Locust master/worker pair for distributed, GUI-driven load testing
+# at real scale (see README's "Load Testing" section).
 #
 # Frees the fixed host-port publish on `backend` — docker compose refuses to
 # bind 127.0.0.1:8000 more than once when scaled with --scale. Traffic still
 # reaches every replica: frontend/vite.config.js proxies /api and /ws to the
 # `backend` service name, and Docker's embedded DNS round-robins across all
 # replicas of a scaled service, so no load balancer is needed for local dev.
+# The Locust services talk to `backend:8000` the same way, for the same
+# reason (also sidesteps Docker Desktop's Windows host port-forwarding
+# relay, which has its own concurrency ceiling well under 1000).
 #
 # Usage:
+#   docker compose exec backend python scripts/db_seed.py --users 1000 --rooms 50
 #   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml \
-#     up --build --scale backend=3
+#     up --build --scale backend=3 --scale locust-worker=3
+#   open http://localhost:8089
 #
 # `!reset` requires Docker Compose v2.24+ (Jan 2024), same as docker-compose.prod.yml.
 services:
   backend:
     ports: !reset []
+
+  locust-master:
+    build: ./loadtest
+    command: locust -f locustfile.py --host http://backend:8000 --master
+    ports:
+      - "127.0.0.1:8089:8089"
+    volumes:
+      - ./backend/scripts:/fixtures:ro
+    depends_on:
+      - backend
+
+  locust-worker:
+    build: ./loadtest
+    command: locust -f locustfile.py --worker --master-host locust-master
+    volumes:
+      - ./backend/scripts:/fixtures:ro
+    depends_on:
+      - locust-master
