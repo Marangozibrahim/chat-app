@@ -16,6 +16,7 @@ The interesting part isn't the chat — it's that the entire real-time layer is 
 - **Resilient client** — exponential-backoff WebSocket reconnect (1s → 30s cap), scroll-position-preserving infinite scroll, an unread-messages divider, dark/light theming, and a "Reconnecting…" banner.
 - **Access + refresh JWTs** — short-lived access token (60 min) plus a long-lived refresh token (30 days). The axios client transparently refreshes on a 401 and retries the original request (single-flight, so a burst of 401s triggers one refresh), keeping users logged in without a hard mid-session logout. Tokens are typed, so a refresh token can't be used as an access token and vice versa.
 - **Rate limiting + input caps** — Redis-backed per-IP limits on auth routes (slowapi) hold across all workers, blunting brute-force and signup spam. Message bodies are length-capped at the schema and WebSocket layers.
+- **Live worker dashboard + traffic simulator** — every backend process heartbeats its identity and local connection count into Redis (`/admin/workers`, token-gated); a bundled asyncio [load-test script](#load-testing) mocks dozens of concurrent chatting users so you can actually watch the multi-worker fan-out do its job.
 - **Production-minded** — explicit CORS allowlist, health check endpoint, GitHub Actions CI (migrations + pytest + frontend build + docker build), Alembic migrations, and a documented AWS EC2 deployment.
 
 ---
@@ -109,6 +110,15 @@ seen:room:{id}            HSET   user_id → last_seen_message_id (read receipts
 
 Stale members (>60s without a heartbeat) are evicted with `ZREMRANGEBYSCORE` — no full scan needed.
 
+### Worker registry
+
+```
+workers:heartbeat        HSET   worker_id → {hostname, pid, started_at, last_heartbeat, conn_count, room_count}
+workers:heartbeat:zset   ZSET   worker_id scored by last_heartbeat   (stale eviction)
+```
+
+Same HSET+ZSET shape as presence, one level up: each backend process heartbeats itself every 10s instead of each user. `conn_count`/`room_count` come straight from that process's own in-memory `ConnectionManager` — no cross-process bookkeeping needed. `GET /admin/workers` (gated by an `ADMIN_TOKEN` header) reads it back for the [`/admin` dashboard](#load-testing). A graceful shutdown deregisters immediately; a hard kill falls back to the 30s stale eviction.
+
 ---
 
 ## Project Layout
@@ -126,6 +136,7 @@ routers/
   rooms.py           rooms CRUD, members + online status, seen state
   messages.py        cursor-paginated history, edit (PATCH), delete (DELETE)
   uploads.py         presigned upload URL + confirm-upload
+  admin.py           GET /admin/workers, gated by ADMIN_TOKEN header
   ws.py              WebSocket endpoint: JWT validation, message/typing/seen/ping
 services/
   auth.py            bcrypt hashing, JWT encode/decode
@@ -133,10 +144,13 @@ services/
   presence.py        all Redis presence + read-receipt logic
   room.py            room queries (member_count via isolated subquery)
   storage.py         S3 presigned URLs, MIME allowlist, object deletion
+  worker_registry.py per-process heartbeat + live-worker listing for /admin/workers
 ws/
   manager.py         ConnectionManager singleton: room_id → set[WebSocket], lock-guarded
   redis_listener.py  background psubscribe coroutine, fans out to local sockets
 db/migrations/       Alembic
+scripts/
+  load_test.py       asyncio traffic simulator (see Load Testing below)
 ```
 
 ### Frontend (`frontend/src/`)
@@ -156,10 +170,12 @@ components/
 api/
   client.js          axios instance, Bearer-token request interceptor
   rooms.js / messages.js / uploads.js / auth.js
+  admin.js           bare axios call with X-Admin-Token header (separate credential from client.js)
 pages/
   ChatPage.jsx       unified history+live state, pagination, divider, seen map
   RoomsPage.jsx      room list with live unread indicators (5s poll)
   LoginPage.jsx / RegisterPage.jsx
+  AdminPage.jsx      /admin worker dashboard, 5s poll, token in sessionStorage
 ```
 
 ---
@@ -173,6 +189,7 @@ pages/
 - **CORS-safe S3 uploads** — `ContentType` is deliberately left out of the signed PUT headers (including it triggers an S3 CORS preflight 500), and a regional `endpoint_url` is forced to avoid presigned-URL signature mismatches.
 - **Windows Docker HMR** — `CHOKIDAR_USEPOLLING=true` + Vite `watch.usePolling` are required for hot reload inside Docker on Windows.
 - **`React.StrictMode` intentionally removed** — its double-mount breaks the WebSocket lifecycle in dev.
+- **Admin dashboard is a separate credential** — `/admin` isn't behind the chat-user `ProtectedRoute`; it's gated by its own `ADMIN_TOKEN`, entered client-side and kept in `sessionStorage` rather than `localStorage` since it's a standing secret that shouldn't outlive the tab.
 
 ---
 
@@ -228,6 +245,7 @@ MAX_UPLOAD_BYTES      524288000          # 500 MB
 PRESIGNED_URL_EXPIRY  3600
 MAX_MESSAGE_CHARS     4000               # max chat message length
 CORS_ORIGINS_RAW      http://localhost:3000,http://localhost:5173  # CSV of allowed origins
+ADMIN_TOKEN           <secret>           # gates GET /admin/workers; empty = refuses everyone
 ```
 
 Two `.env` files, both gitignored:
@@ -273,6 +291,32 @@ GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on ev
 1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`. The suite covers auth (service + API), presence (online/offline, stale eviction, read receipts against real Redis), the Redis pub/sub fan-out that powers horizontal scaling, and the WebSocket handshake (JWT gating, presence broadcast, ping/pong).
 2. **frontend** — `npm install`, `npm test` (Vitest: axios refresh-on-401 interceptor + AuthContext token lifecycle), then `npm run build`.
 3. **docker-build** — `docker compose build` to catch image regressions.
+
+---
+
+## Load Testing
+
+Watch the multi-worker fan-out actually happen: scale the backend, hit `/admin` to see workers appear, then throw simulated traffic at it.
+
+```bash
+# 1. Set ADMIN_TOKEN in .env, then scale the dev backend to 3 replicas
+docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up --build --scale backend=3
+
+# 2. Open http://localhost:3000/admin and enter your ADMIN_TOKEN — you should see 3 workers
+
+# 3. One-time: seed a pool of test users (paced under the register rate limit, ~13s/user)
+pip install -r backend/scripts/requirements.txt
+python backend/scripts/load_test.py --seed-users 30 --rooms 3
+
+# 4. Run traffic against the scaled stack
+python backend/scripts/load_test.py --users 30 --duration 60 --admin-token <ADMIN_TOKEN>
+```
+
+`docker-compose.loadtest.yml` just frees the fixed `127.0.0.1:8000` host-port publish on `backend` so `--scale` can bind multiple replicas — no load balancer needed, since `vite.config.js` already proxies `/api`/`/ws` to the `backend` **service name**, and Docker's embedded DNS round-robins new connections across every replica of a scaled service, same as it would for a real browser hitting `localhost:3000`.
+
+`load_test.py` mocks concurrent users end-to-end: register (seed mode only), join a room, open a real WebSocket connection, send `ping`/`message`/`typing` like the real client, and measure round-trip latency by timestamping each sent message and parsing it back out of its own echoed broadcast. Seeded users and their tokens are cached in `backend/scripts/.loadtest_users.json` (gitignored) so subsequent runs skip registration entirely — registration is rate-limited to 5/min per IP, so re-registering every run would be painfully slow. Pass `--admin-token` to fold a live worker/connection timeline into the final report.
+
+Run `python backend/scripts/load_test.py --help` for all flags (`--rooms`, `--msg-rate`, `--ramp-up`, `--duration`, `--base-url`).
 
 ---
 

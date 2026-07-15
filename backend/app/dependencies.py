@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 
 import redis.asyncio as aioredis
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,13 @@ from app.config import settings
 from app.db.session import AsyncSessionLocal
 
 bearer = HTTPBearer()
+
+
+async def require_admin(x_admin_token: str = Header(default="")):
+    # settings.admin_token == "" means it was never configured — refuse
+    # everyone rather than defaulting open.
+    if not settings.admin_token or x_admin_token != settings.admin_token:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
 _redis_pool: aioredis.Redis | None = None
 

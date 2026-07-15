@@ -1,0 +1,17 @@
+# Override for scaling the dev backend locally to watch the multi-worker
+# fan-out under load (see /admin dashboard + backend/scripts/load_test.py).
+#
+# Frees the fixed host-port publish on `backend` — docker compose refuses to
+# bind 127.0.0.1:8000 more than once when scaled with --scale. Traffic still
+# reaches every replica: frontend/vite.config.js proxies /api and /ws to the
+# `backend` service name, and Docker's embedded DNS round-robins across all
+# replicas of a scaled service, so no load balancer is needed for local dev.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml \
+#     up --build --scale backend=3
+#
+# `!reset` requires Docker Compose v2.24+ (Jan 2024), same as docker-compose.prod.yml.
+services:
+  backend:
+    ports: !reset []
