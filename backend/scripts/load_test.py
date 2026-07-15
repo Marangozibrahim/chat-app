@@ -34,6 +34,7 @@ FIXTURE_PATH = Path(__file__).parent / ".loadtest_users.json"
 
 REGISTER_INTERVAL = 13  # seconds; keeps us under the 5/min register limit
 REFRESH_INTERVAL = 2.5  # seconds; keeps us under the 30/min refresh limit
+LOGIN_INTERVAL = 6.5    # seconds; keeps us under the 10/min login limit (refresh fallback)
 
 
 def rand_suffix(n=6):
@@ -78,14 +79,42 @@ async def refresh_user(client, base_url, user):
         user["refresh_token"] = tokens["refresh_token"]
 
 
+async def login_user(client, base_url, user):
+    resp = await client.post(
+        f"{base_url}/api/auth/login", json={"username": user["username"], "password": user["password"]}
+    )
+    resp.raise_for_status()
+    tokens = resp.json()
+    user["access_token"] = tokens["access_token"]
+    user["refresh_token"] = tokens["refresh_token"]
+
+
 async def refresh_all(client, base_url, users):
+    """Refresh every cached user's access token. A refresh failure (expired
+    30-day refresh token, but the account still exists) falls back to a
+    plain login. If both fail — e.g. the dev DB got wiped/recreated between
+    seed runs — the user is dead and gets pruned from the list in place, so
+    `seed()`'s registration pass replaces it instead of carrying a
+    permanently-broken entry forward into every future run.
+    """
+    dead = []
     for i, user in enumerate(users):
         try:
             await refresh_user(client, base_url, user)
         except httpx.HTTPStatusError:
-            print(f"  warning: refresh failed for {user['username']} (may need re-seeding)")
+            await asyncio.sleep(LOGIN_INTERVAL)
+            try:
+                await login_user(client, base_url, user)
+                print(f"  refresh expired for {user['username']}, logged in instead")
+            except httpx.HTTPStatusError:
+                print(f"  {user['username']} no longer exists — will re-register")
+                dead.append(user)
         if i < len(users) - 1:
             await asyncio.sleep(REFRESH_INTERVAL)
+
+    for user in dead:
+        users.remove(user)
+    return len(dead)
 
 
 async def ensure_rooms(client, base_url, token, room_names):
@@ -116,7 +145,9 @@ async def seed(args):
     async with httpx.AsyncClient(timeout=10) as client:
         if data["users"]:
             print(f"Refreshing tokens for {len(data['users'])} cached users...")
-            await refresh_all(client, args.base_url, data["users"])
+            pruned = await refresh_all(client, args.base_url, data["users"])
+            if pruned:
+                print(f"Pruned {pruned} dead user(s) from the pool.")
             save_fixture(data)
 
         existing = len(data["users"])
