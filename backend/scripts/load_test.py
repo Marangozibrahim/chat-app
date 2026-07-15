@@ -14,6 +14,19 @@ not :8000 directly — that's what actually spreads connections across a
 round-robins new connections to `backend` across every replica the same way
 it does for a real browser. See docker-compose.loadtest.yml.
 
+At high concurrency (several hundred+), going through `localhost` on Windows
+hits Docker Desktop's host port-forwarding relay, which has its own
+concurrency ceiling unrelated to the app. For real scale, run this script
+*inside* the compose network instead, talking to `backend:8000` directly
+(same round-robin across replicas, no host relay in the way) — pass
+`--api-prefix ""` since REST routes have no /api prefix without Vite/nginx
+in front to add one:
+
+    docker run --rm --network chat-app_default \
+      -v "${PWD}/backend/scripts:/scripts" python:3.12-slim sh -c \
+      "pip install -q httpx websockets && python /scripts/load_test.py \
+       --base-url http://backend:8000 --api-prefix '' --users 1000 ..."
+
 Registration is rate-limited server-side (5/min per IP — see
 app/routers/auth.py), so seeding paces itself and caches the resulting users
 to .loadtest_users.json (gitignored) for reuse across runs.
@@ -51,11 +64,11 @@ def save_fixture(data):
     FIXTURE_PATH.write_text(json.dumps(data, indent=2))
 
 
-async def register_user(client, base_url, idx):
+async def register_user(client, base_url, api_prefix, idx):
     username = f"loadtest_{idx}_{rand_suffix()}"
     password = "loadtest-pw-12345"
     resp = await client.post(
-        f"{base_url}/api/auth/register",
+        f"{base_url}{api_prefix}/auth/register",
         # A .test/.local/.invalid/.example domain trips pydantic's EmailStr —
         # email-validator rejects RFC 2606/6761 special-use domains outright.
         json={"username": username, "email": f"{username}@loadtest-app.com", "password": password},
@@ -70,8 +83,8 @@ async def register_user(client, base_url, idx):
     }
 
 
-async def refresh_user(client, base_url, user):
-    resp = await client.post(f"{base_url}/api/auth/refresh", json={"refresh_token": user["refresh_token"]})
+async def refresh_user(client, base_url, api_prefix, user):
+    resp = await client.post(f"{base_url}{api_prefix}/auth/refresh", json={"refresh_token": user["refresh_token"]})
     resp.raise_for_status()
     tokens = resp.json()
     user["access_token"] = tokens["access_token"]
@@ -79,9 +92,9 @@ async def refresh_user(client, base_url, user):
         user["refresh_token"] = tokens["refresh_token"]
 
 
-async def login_user(client, base_url, user):
+async def login_user(client, base_url, api_prefix, user):
     resp = await client.post(
-        f"{base_url}/api/auth/login", json={"username": user["username"], "password": user["password"]}
+        f"{base_url}{api_prefix}/auth/login", json={"username": user["username"], "password": user["password"]}
     )
     resp.raise_for_status()
     tokens = resp.json()
@@ -89,7 +102,7 @@ async def login_user(client, base_url, user):
     user["refresh_token"] = tokens["refresh_token"]
 
 
-async def refresh_all(client, base_url, users):
+async def refresh_all(client, base_url, api_prefix, users):
     """Refresh every cached user's access token. A refresh failure (expired
     30-day refresh token, but the account still exists) falls back to a
     plain login. If both fail — e.g. the dev DB got wiped/recreated between
@@ -100,11 +113,11 @@ async def refresh_all(client, base_url, users):
     dead = []
     for i, user in enumerate(users):
         try:
-            await refresh_user(client, base_url, user)
+            await refresh_user(client, base_url, api_prefix, user)
         except httpx.HTTPStatusError:
             await asyncio.sleep(LOGIN_INTERVAL)
             try:
-                await login_user(client, base_url, user)
+                await login_user(client, base_url, api_prefix, user)
                 print(f"  refresh expired for {user['username']}, logged in instead")
             except httpx.HTTPStatusError:
                 print(f"  {user['username']} no longer exists — will re-register")
@@ -117,9 +130,9 @@ async def refresh_all(client, base_url, users):
     return len(dead)
 
 
-async def ensure_rooms(client, base_url, token, room_names):
+async def ensure_rooms(client, base_url, api_prefix, token, room_names):
     headers = {"Authorization": f"Bearer {token}"}
-    resp = await client.get(f"{base_url}/api/rooms", headers=headers)
+    resp = await client.get(f"{base_url}{api_prefix}/rooms", headers=headers)
     resp.raise_for_status()
     existing = {r["name"]: r["id"] for r in resp.json()}
 
@@ -128,15 +141,15 @@ async def ensure_rooms(client, base_url, token, room_names):
         if name in existing:
             room_ids.append(existing[name])
             continue
-        resp = await client.post(f"{base_url}/api/rooms", json={"name": name}, headers=headers)
+        resp = await client.post(f"{base_url}{api_prefix}/rooms", json={"name": name}, headers=headers)
         resp.raise_for_status()
         room_ids.append(resp.json()["id"])
     return room_ids
 
 
-async def join_room(client, base_url, token, room_id):
+async def join_room(client, base_url, api_prefix, token, room_id):
     headers = {"Authorization": f"Bearer {token}"}
-    resp = await client.post(f"{base_url}/api/rooms/{room_id}/join", headers=headers)
+    resp = await client.post(f"{base_url}{api_prefix}/rooms/{room_id}/join", headers=headers)
     resp.raise_for_status()
 
 
@@ -145,7 +158,7 @@ async def seed(args):
     async with httpx.AsyncClient(timeout=10) as client:
         if data["users"]:
             print(f"Refreshing tokens for {len(data['users'])} cached users...")
-            pruned = await refresh_all(client, args.base_url, data["users"])
+            pruned = await refresh_all(client, args.base_url, args.api_prefix, data["users"])
             if pruned:
                 print(f"Pruned {pruned} dead user(s) from the pool.")
             save_fixture(data)
@@ -156,7 +169,7 @@ async def seed(args):
             eta = to_create * REGISTER_INTERVAL
             print(f"Registering {to_create} new users (~{eta:.0f}s, register is rate-limited to 5/min)...")
         for i in range(to_create):
-            user = await register_user(client, args.base_url, existing + i)
+            user = await register_user(client, args.base_url, args.api_prefix, existing + i)
             data["users"].append(user)
             save_fixture(data)  # incremental save so a crash mid-seed doesn't lose progress
             print(f"  [{i + 1}/{to_create}] registered {user['username']}")
@@ -168,13 +181,13 @@ async def seed(args):
             sys.exit(1)
 
         room_names = [f"loadtest-room-{i}" for i in range(args.rooms)]
-        room_ids = await ensure_rooms(client, args.base_url, data["users"][0]["access_token"], room_names)
+        room_ids = await ensure_rooms(client, args.base_url, args.api_prefix, data["users"][0]["access_token"], room_names)
         data["rooms"] = room_ids
         save_fixture(data)
 
         print("Joining users to rooms...")
         for i, user in enumerate(data["users"]):
-            await join_room(client, args.base_url, user["access_token"], room_ids[i % len(room_ids)])
+            await join_room(client, args.base_url, args.api_prefix, user["access_token"], room_ids[i % len(room_ids)])
 
     print(f"Done: {len(data['users'])} users, {len(room_ids)} rooms cached at {FIXTURE_PATH}")
 
@@ -187,6 +200,7 @@ class Stats:
         self.received = 0
         self.errors = 0
         self.latencies = []
+        self.sample_connect_error = None
 
 
 async def user_session(base_url, ws_base, user, room_id, args, stats, initial_delay):
@@ -199,10 +213,12 @@ async def user_session(base_url, ws_base, user, room_id, args, stats, initial_de
             try:
                 ws = await websockets.connect(uri, open_timeout=10, ping_interval=None)
                 break
-            except Exception:
+            except Exception as e:
+                if stats.sample_connect_error is None:
+                    stats.sample_connect_error = f"{type(e).__name__}: {e}"
                 if attempt == 0:
                     try:
-                        await refresh_user(reauth_client, base_url, user)
+                        await refresh_user(reauth_client, base_url, args.api_prefix, user)
                         uri = f"{ws_base}/ws/rooms/{room_id}?token={user['access_token']}"
                     except Exception:
                         pass
@@ -255,13 +271,13 @@ async def user_session(base_url, ws_base, user, room_id, args, stats, initial_de
         await ws.close()
 
 
-async def poll_admin(client, base_url, admin_token, snapshots):
+async def poll_admin(client, base_url, api_prefix, admin_token, snapshots):
     start = time.time()
     try:
         while True:
             try:
                 resp = await client.get(
-                    f"{base_url}/api/admin/workers", headers={"X-Admin-Token": admin_token}
+                    f"{base_url}{api_prefix}/admin/workers", headers={"X-Admin-Token": admin_token}
                 )
                 if resp.status_code == 200:
                     snapshots.append((time.time() - start, resp.json()))
@@ -276,6 +292,8 @@ def print_report(args, stats, admin_snapshots):
     print("\n=== Load test report ===")
     print(f"Users: {args.users}  Duration: {args.duration}s  Target rate: {args.msg_rate}/min/user")
     print(f"Connected: {stats.connected}  Connect failures: {stats.connect_failed}")
+    if stats.sample_connect_error:
+        print(f"Sample connect error: {stats.sample_connect_error}")
     print(f"Messages sent: {stats.sent}  Received (echoed back to sender): {stats.received}")
     print(f"Errors: {stats.errors}")
     if stats.latencies:
@@ -323,7 +341,9 @@ async def run(args):
     admin_task = None
     if args.admin_token:
         async with httpx.AsyncClient(timeout=10) as admin_client:
-            admin_task = asyncio.create_task(poll_admin(admin_client, args.base_url, args.admin_token, admin_snapshots))
+            admin_task = asyncio.create_task(
+                poll_admin(admin_client, args.base_url, args.api_prefix, args.admin_token, admin_snapshots)
+            )
             await asyncio.sleep(args.ramp_up + args.duration)
             admin_task.cancel()
             await asyncio.gather(admin_task, return_exceptions=True)
@@ -340,6 +360,11 @@ async def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", default="http://localhost:3000")
+    parser.add_argument(
+        "--api-prefix", default="/api",
+        help="REST path prefix. Default '/api' matches Vite/nginx's proxy rewrite; "
+             "pass '' when --base-url points straight at the backend (e.g. inside the compose network)",
+    )
     parser.add_argument("--seed-users", type=int, default=None, help="Seed/top up the cached pool to N users, then exit")
     parser.add_argument("--rooms", type=int, default=3, help="Rooms to distribute seeded users across")
     parser.add_argument("--users", type=int, default=10, help="Cached users to simulate in a run")

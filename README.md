@@ -151,6 +151,7 @@ ws/
 db/migrations/       Alembic
 scripts/
   load_test.py       asyncio traffic simulator (see Load Testing below)
+  db_seed.py          direct-to-Postgres fixture generator for large-scale load tests
 ```
 
 ### Frontend (`frontend/src/`)
@@ -317,6 +318,25 @@ python backend/scripts/load_test.py --users 30 --duration 60 --admin-token <ADMI
 `load_test.py` mocks concurrent users end-to-end: register (seed mode only), join a room, open a real WebSocket connection, send `ping`/`message`/`typing` like the real client, and measure round-trip latency by timestamping each sent message and parsing it back out of its own echoed broadcast. Seeded users and their tokens are cached in `backend/scripts/.loadtest_users.json` (gitignored) so subsequent runs skip registration entirely — registration is rate-limited to 5/min per IP, so re-registering every run would be painfully slow. Pass `--admin-token` to fold a live worker/connection timeline into the final report.
 
 Run `python backend/scripts/load_test.py --help` for all flags (`--rooms`, `--msg-rate`, `--ramp-up`, `--duration`, `--base-url`).
+
+### Testing at real scale (100s–1000s of users)
+
+Two things stop `--seed-users` + `localhost:3000` from scaling past a few hundred users:
+
+- **Registration is rate-limited to 5/min per IP.** Seeding 1000 users through the real `/auth/register` endpoint would take ~3.6h. Use `backend/scripts/db_seed.py` instead — it writes users, room memberships, and JWTs directly to Postgres, bypassing the endpoint (and its rate limit) entirely. Minutes instead of hours. `pytest`'s `test_auth_api.py` already covers the register endpoint itself, so this doesn't lose coverage — the thing you're actually testing is the WS fan-out, not signup. It also mints access tokens with a 24h lifetime instead of the normal 60-minute one, so a seeded pool survives a whole day of testing (letting it expire mid-run means every reconnect falls back to the rate-limited `/auth/refresh` endpoint, capping recovery at 30/min regardless of how many users you're simulating — a real footgun we hit and fixed while building this).
+- **`localhost:3000` on Windows goes through Docker Desktop's host port-forwarding relay**, which has its own concurrency ceiling well under 1000 — unrelated to the app, but it'll make connections silently stall forever past a few hundred. Run the load generator *inside* the compose network instead, talking to `backend:8000` directly (no host relay in the path). Pass `--api-prefix ""` since REST routes have no `/api` prefix without Vite/nginx in front to add one.
+
+```bash
+docker compose exec backend python scripts/db_seed.py --users 1000 --rooms 50
+
+docker run --rm --network chat-app_default -v "${PWD}/backend/scripts:/scripts" python:3.12-slim sh -c \
+  "pip install -q httpx websockets && python /scripts/load_test.py \
+   --base-url http://backend:8000 --api-prefix '' \
+   --users 1000 --rooms 50 --msg-rate 2 --duration 60 --ramp-up 60 \
+   --admin-token <ADMIN_TOKEN>"
+```
+
+At high user counts, also widen `--rooms` so per-room broadcast fan-out doesn't blow up — e.g. 1000 users in 3 rooms means every message fans out to ~333 sockets; 1000 users in 50 rooms (~20/room) keeps delivery volume sane. Lower `--msg-rate` for the first big run too.
 
 ---
 
