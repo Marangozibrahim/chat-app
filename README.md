@@ -16,7 +16,7 @@ The interesting part isn't the chat — it's that the entire real-time layer is 
 - **Resilient client** — exponential-backoff WebSocket reconnect (1s → 30s cap), scroll-position-preserving infinite scroll, an unread-messages divider, dark/light theming, and a "Reconnecting…" banner.
 - **Access + refresh JWTs** — short-lived access token (60 min) plus a long-lived refresh token (30 days). The axios client transparently refreshes on a 401 and retries the original request (single-flight, so a burst of 401s triggers one refresh), keeping users logged in without a hard mid-session logout. Tokens are typed, so a refresh token can't be used as an access token and vice versa.
 - **Rate limiting + input caps** — Redis-backed per-IP limits on auth routes (slowapi) hold across all workers, blunting brute-force and signup spam. Message bodies are length-capped at the schema and WebSocket layers.
-- **Live worker dashboard + traffic simulator** — every backend process heartbeats its identity and local connection count into Redis (`/admin/workers`, token-gated); a bundled asyncio [load-test script](#load-testing) mocks dozens of concurrent chatting users so you can actually watch the multi-worker fan-out do its job.
+- **Live worker dashboard + traffic simulator** — every backend process heartbeats its identity and local connection count into Redis (`/admin/workers`, token-gated); a bundled asyncio [load-test script](#load-testing) plus a distributed Locust setup mock up to 1000 concurrent chatting users so you can actually watch the multi-worker fan-out do its job ([measured results](#measured-results)).
 - **Production-minded** — explicit CORS allowlist, health check endpoint, GitHub Actions CI (migrations + pytest + frontend build + docker build), Alembic migrations, and a documented AWS EC2 deployment.
 
 ---
@@ -192,6 +192,7 @@ backend/scripts/
                         mints 24h tokens) — shared by both tools below
   load_test.py          standalone asyncio CLI load generator, no GUI/distribution
   .loadtest_users.json  gitignored fixture both tools read
+loadtest/results/       run output from both tools (gitignored) - see Where the results end up
 ```
 
 ---
@@ -304,7 +305,7 @@ Known tradeoffs (deliberate, called out rather than hidden):
 
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push and PR to `main`:
 
-1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`. The suite covers auth (service + API), presence (online/offline, stale eviction, read receipts against real Redis), the Redis pub/sub fan-out that powers horizontal scaling, and the WebSocket handshake (JWT gating, presence broadcast, ping/pong).
+1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`. The suite covers auth (service + API), presence (online/offline, stale eviction, read receipts against real Redis), the Redis pub/sub fan-out that powers horizontal scaling, the WebSocket handshake (JWT gating, presence broadcast, ping/pong), and the worker registry behind `/admin/workers` (token gating, heartbeat round-trip, stale eviction).
 2. **frontend** — `npm install`, `npm test` (Vitest: axios refresh-on-401 interceptor + AuthContext token lifecycle), then `npm run build`.
 3. **docker-build** — `docker compose build` to catch image regressions.
 
@@ -328,11 +329,11 @@ python backend/scripts/load_test.py --seed-users 30 --rooms 3
 python backend/scripts/load_test.py --users 30 --duration 60 --admin-token <ADMIN_TOKEN>
 ```
 
-`docker-compose.loadtest.yml` just frees the fixed `127.0.0.1:8000` host-port publish on `backend` so `--scale` can bind multiple replicas — no load balancer needed, since `vite.config.js` already proxies `/api`/`/ws` to the `backend` **service name**, and Docker's embedded DNS round-robins new connections across every replica of a scaled service, same as it would for a real browser hitting `localhost:3000`.
+`docker-compose.loadtest.yml` frees the fixed `127.0.0.1:8000` host-port publish on `backend` so `--scale` can bind multiple replicas (it also defines the Locust master/worker pair used further down) — no load balancer needed, since `vite.config.js` already proxies `/api`/`/ws` to the `backend` **service name**, and Docker's embedded DNS round-robins new connections across every replica of a scaled service, same as it would for a real browser hitting `localhost:3000`.
 
 `load_test.py` mocks concurrent users end-to-end: register (seed mode only), join a room, open a real WebSocket connection, send `ping`/`message`/`typing` like the real client, and measure round-trip latency by timestamping each sent message and parsing it back out of its own echoed broadcast. Seeded users and their tokens are cached in `backend/scripts/.loadtest_users.json` (gitignored) so subsequent runs skip registration entirely — registration is rate-limited to 5/min per IP, so re-registering every run would be painfully slow. Pass `--admin-token` to fold a live worker/connection timeline into the final report.
 
-Run `python backend/scripts/load_test.py --help` for all flags (`--rooms`, `--msg-rate`, `--ramp-up`, `--duration`, `--base-url`).
+Run `python backend/scripts/load_test.py --help` for all flags (`--rooms`, `--msg-rate`, `--ramp-up`, `--duration`, `--base-url`, `--api-prefix`, `--out`).
 
 ### Testing at real scale (100s–1000s of users) — Locust GUI
 
@@ -393,7 +394,10 @@ container. Both now persist to `loadtest/results/` (gitignored, regenerated per 
 | `<name>.json` | `load_test.py --out <path>` | end of run - config, connect failures, latency percentiles, worker snapshots |
 
 Locust's CSVs are also downloadable from the UI's "Download Data" tab mid-run; the files
-above are the same data, written automatically so a run survives the container.
+above are the same data, written to the host automatically so results outlive the container
+once it is gone. They are *not* append-only across runs, though: the master truncates and
+rewrites them, so a fresh run - or a restart of the master container - replaces whatever was
+there.
 
 For a UI-driven run, grab the HTML report from the master **while it is still running** rather
 than relying on the `--html` write at exit:
@@ -453,8 +457,10 @@ effect until a rebuild.
   containers keep using the old pool's tokens after `db_seed.py` runs again. Stale tokens fail the
   WebSocket handshake as HTTP `403` (the server closes before `accept()`, so the client never sees
   close code 4001).
-- **Scale both services every time.** `docker compose ... up --scale backend=3 --scale locust-worker=3`
-  - naming only one converges the other back to one replica, silently.
+- **Running the Locust flow? Scale both services in the same command.**
+  `docker compose ... up --scale backend=3 --scale locust-worker=3` - naming only one converges the
+  other back to a single replica, silently. (The CLI-only flow at the top of this section scales just
+  `backend` on purpose; it never uses the Locust workers.)
 - **Editing `locustfile.py` needs no rebuild** (it is bind-mounted over the image's baked copy), but it
   does need `docker compose restart locust-worker locust-master`.
 
