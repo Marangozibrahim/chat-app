@@ -1,0 +1,5 @@
+# Load-test tool only — kept separate from backend/requirements.txt so this
+# doesn't get baked into the app's prod Docker image.
+#   pip install -r backend/scripts/requirements.txt
+httpx==0.27.2
+websockets==13.1

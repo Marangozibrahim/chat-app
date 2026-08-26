@@ -16,6 +16,7 @@ The interesting part isn't the chat — it's that the entire real-time layer is 
 - **Resilient client** — exponential-backoff WebSocket reconnect (1s → 30s cap), scroll-position-preserving infinite scroll, an unread-messages divider, dark/light theming, and a "Reconnecting…" banner.
 - **Access + refresh JWTs** — short-lived access token (60 min) plus a long-lived refresh token (30 days). The axios client transparently refreshes on a 401 and retries the original request (single-flight, so a burst of 401s triggers one refresh), keeping users logged in without a hard mid-session logout. Tokens are typed, so a refresh token can't be used as an access token and vice versa.
 - **Rate limiting + input caps** — Redis-backed per-IP limits on auth routes (slowapi) hold across all workers, blunting brute-force and signup spam. Message bodies are length-capped at the schema and WebSocket layers.
+- **Live worker dashboard + traffic simulator** — every backend process heartbeats its identity and local connection count into Redis (`/admin/workers`, token-gated); a bundled asyncio [load-test script](#load-testing) plus a distributed Locust setup mock up to 1000 concurrent chatting users so you can actually watch the multi-worker fan-out do its job ([measured results](#measured-results)).
 - **Production-minded** — explicit CORS allowlist, health check endpoint, GitHub Actions CI (migrations + pytest + frontend build + docker build), Alembic migrations, and a documented AWS EC2 deployment.
 
 ---
@@ -109,6 +110,15 @@ seen:room:{id}            HSET   user_id → last_seen_message_id (read receipts
 
 Stale members (>60s without a heartbeat) are evicted with `ZREMRANGEBYSCORE` — no full scan needed.
 
+### Worker registry
+
+```
+workers:heartbeat        HSET   worker_id → {hostname, pid, started_at, last_heartbeat, conn_count, room_count}
+workers:heartbeat:zset   ZSET   worker_id scored by last_heartbeat   (stale eviction)
+```
+
+Same HSET+ZSET shape as presence, one level up: each backend process heartbeats itself every 10s instead of each user. `conn_count`/`room_count` come straight from that process's own in-memory `ConnectionManager` — no cross-process bookkeeping needed. `GET /admin/workers` (gated by an `ADMIN_TOKEN` header) reads it back for the [`/admin` dashboard](#load-testing). A graceful shutdown deregisters immediately; a hard kill falls back to the 30s stale eviction.
+
 ---
 
 ## Project Layout
@@ -126,6 +136,7 @@ routers/
   rooms.py           rooms CRUD, members + online status, seen state
   messages.py        cursor-paginated history, edit (PATCH), delete (DELETE)
   uploads.py         presigned upload URL + confirm-upload
+  admin.py           GET /admin/workers, gated by ADMIN_TOKEN header
   ws.py              WebSocket endpoint: JWT validation, message/typing/seen/ping
 services/
   auth.py            bcrypt hashing, JWT encode/decode
@@ -133,10 +144,14 @@ services/
   presence.py        all Redis presence + read-receipt logic
   room.py            room queries (member_count via isolated subquery)
   storage.py         S3 presigned URLs, MIME allowlist, object deletion
+  worker_registry.py per-process heartbeat + live-worker listing for /admin/workers
 ws/
   manager.py         ConnectionManager singleton: room_id → set[WebSocket], lock-guarded
   redis_listener.py  background psubscribe coroutine, fans out to local sockets
 db/migrations/       Alembic
+scripts/
+  load_test.py       asyncio traffic simulator (see Load Testing below)
+  db_seed.py          direct-to-Postgres fixture generator for large-scale load tests
 ```
 
 ### Frontend (`frontend/src/`)
@@ -156,10 +171,28 @@ components/
 api/
   client.js          axios instance, Bearer-token request interceptor
   rooms.js / messages.js / uploads.js / auth.js
+  admin.js           bare axios call with X-Admin-Token header (separate credential from client.js)
 pages/
   ChatPage.jsx       unified history+live state, pagination, divider, seen map
   RoomsPage.jsx      room list with live unread indicators (5s poll)
   LoginPage.jsx / RegisterPage.jsx
+  AdminPage.jsx      /admin worker dashboard, 5s poll, token in sessionStorage
+```
+
+### Load testing (`loadtest/`, `backend/scripts/`)
+
+```
+loadtest/
+  Dockerfile          python:3.12-slim + locust + websocket-client
+  requirements.txt
+  locustfile.py        ChatUser: custom WS client via events.request.fire(),
+                        reads the shared fixture, ping/message tasks
+backend/scripts/
+  db_seed.py           direct-to-Postgres seeder (bypasses register's rate limit,
+                        mints 24h tokens) — shared by both tools below
+  load_test.py          standalone asyncio CLI load generator, no GUI/distribution
+  .loadtest_users.json  gitignored fixture both tools read
+loadtest/results/       run output from both tools (gitignored) - see Where the results end up
 ```
 
 ---
@@ -173,6 +206,7 @@ pages/
 - **CORS-safe S3 uploads** — `ContentType` is deliberately left out of the signed PUT headers (including it triggers an S3 CORS preflight 500), and a regional `endpoint_url` is forced to avoid presigned-URL signature mismatches.
 - **Windows Docker HMR** — `CHOKIDAR_USEPOLLING=true` + Vite `watch.usePolling` are required for hot reload inside Docker on Windows.
 - **`React.StrictMode` intentionally removed** — its double-mount breaks the WebSocket lifecycle in dev.
+- **Admin dashboard is a separate credential** — `/admin` isn't behind the chat-user `ProtectedRoute`; it's gated by its own `ADMIN_TOKEN`, entered client-side and kept in `sessionStorage` rather than `localStorage` since it's a standing secret that shouldn't outlive the tab.
 
 ---
 
@@ -228,6 +262,7 @@ MAX_UPLOAD_BYTES      524288000          # 500 MB
 PRESIGNED_URL_EXPIRY  3600
 MAX_MESSAGE_CHARS     4000               # max chat message length
 CORS_ORIGINS_RAW      http://localhost:3000,http://localhost:5173  # CSV of allowed origins
+ADMIN_TOKEN           <secret>           # gates GET /admin/workers; empty = refuses everyone
 ```
 
 Two `.env` files, both gitignored:
@@ -270,9 +305,164 @@ Known tradeoffs (deliberate, called out rather than hidden):
 
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push and PR to `main`:
 
-1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`. The suite covers auth (service + API), presence (online/offline, stale eviction, read receipts against real Redis), the Redis pub/sub fan-out that powers horizontal scaling, and the WebSocket handshake (JWT gating, presence broadcast, ping/pong).
+1. **backend** — spins up postgres + redis services, runs `alembic upgrade head`, then `pytest`. The suite covers auth (service + API), presence (online/offline, stale eviction, read receipts against real Redis), the Redis pub/sub fan-out that powers horizontal scaling, the WebSocket handshake (JWT gating, presence broadcast, ping/pong), and the worker registry behind `/admin/workers` (token gating, heartbeat round-trip, stale eviction).
 2. **frontend** — `npm install`, `npm test` (Vitest: axios refresh-on-401 interceptor + AuthContext token lifecycle), then `npm run build`.
 3. **docker-build** — `docker compose build` to catch image regressions.
+
+---
+
+## Load Testing
+
+Watch the multi-worker fan-out actually happen: scale the backend, hit `/admin` to see workers appear, then throw simulated traffic at it.
+
+```bash
+# 1. Set ADMIN_TOKEN in .env, then scale the dev backend to 3 replicas
+docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up --build --scale backend=3
+
+# 2. Open http://localhost:3000/admin and enter your ADMIN_TOKEN — you should see 3 workers
+
+# 3. One-time: seed a pool of test users (paced under the register rate limit, ~13s/user)
+pip install -r backend/scripts/requirements.txt
+python backend/scripts/load_test.py --seed-users 30 --rooms 3
+
+# 4. Run traffic against the scaled stack
+python backend/scripts/load_test.py --users 30 --duration 60 --admin-token <ADMIN_TOKEN>
+```
+
+`docker-compose.loadtest.yml` frees the fixed `127.0.0.1:8000` host-port publish on `backend` so `--scale` can bind multiple replicas (it also defines the Locust master/worker pair used further down) — no load balancer needed, since `vite.config.js` already proxies `/api`/`/ws` to the `backend` **service name**, and Docker's embedded DNS round-robins new connections across every replica of a scaled service, same as it would for a real browser hitting `localhost:3000`.
+
+`load_test.py` mocks concurrent users end-to-end: register (seed mode only), join a room, open a real WebSocket connection, send `ping`/`message`/`typing` like the real client, and measure round-trip latency by timestamping each sent message and parsing it back out of its own echoed broadcast. Seeded users and their tokens are cached in `backend/scripts/.loadtest_users.json` (gitignored) so subsequent runs skip registration entirely — registration is rate-limited to 5/min per IP, so re-registering every run would be painfully slow. Pass `--admin-token` to fold a live worker/connection timeline into the final report.
+
+Run `python backend/scripts/load_test.py --help` for all flags (`--rooms`, `--msg-rate`, `--ramp-up`, `--duration`, `--base-url`, `--api-prefix`, `--out`).
+
+### Testing at real scale (100s–1000s of users) — Locust GUI
+
+`--seed-users` + `python load_test.py` doesn't scale past a few hundred users well: registration is rate-limited to 5/min per IP (seeding 1000 users would take ~3.6h), and on Windows, `localhost:3000` routes through Docker Desktop's host port-forwarding relay, which has its own concurrency ceiling well under 1000 (connections past it silently hang instead of failing). Both are solved the same way `load_test.py`'s scale mode solves them (see below) — but for real scale with a live GUI and the ability to add more load-generating capacity on the fly, use **Locust** (`loadtest/`) instead of the CLI script:
+
+```bash
+# 1. Seed directly in Postgres (bypasses the rate limit, mints 24h tokens
+#    so the pool survives a full day of testing — see below for why)
+docker compose exec backend python scripts/db_seed.py --users 1000 --rooms 50
+
+# 2. Bring up the scaled backend + Locust master/worker pair
+docker compose -f docker-compose.yml -f docker-compose.loadtest.yml \
+  up --build --scale backend=3 --scale locust-worker=3
+
+# 3. Open Locust's own web UI
+open http://localhost:8089
+```
+
+Set "Number of users" and "Spawn rate" in the Locust UI, hit Start — live charts (requests/s, response times, failure rate), adjustable mid-run, no restart needed to change the target user count. Need more load-generating throughput? Scale workers up on the fly and Locust's master auto-discovers them:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d --scale locust-worker=8
+```
+
+`loadtest/locustfile.py` defines a `ChatUser` that opens a real WebSocket to `/ws/rooms/{id}` using a randomly-picked cached user + room from the same `.loadtest_users.json` fixture `db_seed.py` produces, then sends `ping`/`message` at Locust-controlled pacing. No off-the-shelf Locust WebSocket plugin exists for this Locust version, so it's a small custom `User` class using `websocket-client` + Locust's own `events.request.fire()` — the documented, standard way Locust supports any non-HTTP protocol (same pattern real deployments use for gRPC, Kafka, raw sockets, etc).
+
+Both the Locust master and its workers talk to `backend:8000` directly inside the compose network — same reasoning as the CLI script's scale mode: sidesteps the Windows relay bottleneck entirely, and Docker's embedded DNS still round-robins across scaled `backend` replicas the same way it does for a real browser.
+
+Cross-check with the app's own dashboard at the same time: `http://localhost:3000/admin` (there's a "Load Test (Locust) →" link on that page once `locust-master` is running) shows `worker_count`, live `total_connections`, and `active_rooms` from the app's side, right next to Locust's view of the traffic it's generating.
+
+### Testing at scale from the CLI (no GUI needed)
+
+For a quick scale test without spinning up Locust, `load_test.py` supports the same two fixes directly:
+
+```bash
+docker compose exec backend python scripts/db_seed.py --users 1000 --rooms 50
+
+docker run --rm --network chat-app_default -v "${PWD}/backend/scripts:/scripts" -v "${PWD}/loadtest/results:/results" python:3.12-slim sh -c \
+  "pip install -q httpx websockets && python /scripts/load_test.py \
+   --base-url http://backend:8000 --api-prefix '' \
+   --users 1000 --rooms 50 --msg-rate 2 --duration 60 --ramp-up 60 \
+   --admin-token <ADMIN_TOKEN> --out /results/cli-1000.json"
+```
+
+At high user counts, widen `--rooms` so per-room broadcast fan-out doesn't blow up — e.g. 1000 users in 3 rooms means every message fans out to ~333 sockets; 1000 users in 50 rooms (~20/room) keeps delivery volume sane. Lower `--msg-rate` for the first big run too.
+
+### Where the results end up
+
+Neither tool used to keep anything: the CLI script printed its report to stdout, and
+Locust held stats only in the master's memory, so results died with the terminal or the
+container. Both now persist to `loadtest/results/` (gitignored, regenerated per run):
+
+| File | Written by | When |
+|------|-----------|------|
+| `run_stats.csv`, `run_failures.csv` | `locust-master --csv` | continuously during the run |
+| `run_stats_history.csv` | `--csv-full-history` | one row per stats interval - the timeline behind the charts |
+| `report.html` | `--html` | only when Locust exits *normally* - a `--headless -t <time>` run, or Ctrl+C in a foreground master. `docker compose stop` sends SIGTERM, which skips the write (verified: `locust/main.py` calls `save_html_report()` after `main_greenlet.join()` and on KeyboardInterrupt, not from its SIGTERM handler) |
+| `<name>.json` | `load_test.py --out <path>` | end of run - config, connect failures, latency percentiles, worker snapshots |
+
+Locust's CSVs are also downloadable from the UI's "Download Data" tab mid-run; the files
+above are the same data, written to the host automatically so results outlive the container
+once it is gone. They are *not* append-only across runs, though: the master truncates and
+rewrites them, so a fresh run - or a restart of the master container - replaces whatever was
+there.
+
+For a UI-driven run, grab the HTML report from the master **while it is still running** rather
+than relying on the `--html` write at exit:
+
+```bash
+curl -s "http://localhost:8089/stats/report?download=1" -o loadtest/results/report.html
+```
+
+Stopping the *run* (Stop in the UI) keeps the master alive and leaves the CSVs final; restarting
+the master **container** resets them, so copy anything you want to keep first.
+
+### Measured results
+
+Both tools were run at 1000 simulated users against 3 backend replicas, on a 12-core
+Windows host under Docker Desktop, with the load generators inside the compose network
+(so Docker Desktop's host port-forwarding relay is out of the path). Raw output is in
+`loadtest/results/`.
+
+**`load_test.py`** - 1000 users, 50 rooms, 60s ramp + 60s hold, 2 messages/min/user:
+
+| | |
+|---|---|
+| Connections established | 1000 / 1000, 0 connect failures |
+| Messages sent | 2,499 |
+| Broadcasts received | 47,709 (~19x fan-out, matching ~20 users/room) |
+| Round-trip send -> echo | **p50 8ms, p95 19ms, max 97ms** (n=47,709) |
+| Errors | 0 |
+
+Connections ramped linearly (73 -> 241 -> 407 -> 576 -> 740 -> 907 -> 1000) with no
+latency degradation as they climbed - p95 stayed at 19ms with all 1000 sockets live.
+
+**Locust** - 1000 users, 50 rooms, 25 users/s spawn rate, 3 workers:
+
+| | |
+|---|---|
+| `connect` | 1000 requests, 0 failures, median 41ms / p95 170ms |
+| `ping` | 5,978 requests, 0 failures |
+| `message` | 1,983 requests, 0 failures |
+| Connections per backend replica | 351 / 324 / 325 |
+| `run_failures.csv` | empty (header only) |
+
+The even split across replicas is Docker's embedded DNS round-robin doing the work a load
+balancer would - each new WebSocket resolves `backend` independently. `/admin/workers`
+reported the same 1000 connections across 3 workers at the same moment, which is the
+cross-check that the dashboard and the load tool agree.
+
+Two load-generator bugs turned up on the way to those numbers, both fixed - see the
+`ChatUser` notes in `loadtest/locustfile.py`: a `create_connection` timeout that also
+applied to `recv` (killing the reader after 10 quiet seconds, so uvicorn's WebSocket pings
+went unanswered and the server dropped every connection about a minute in), and the
+locustfile being baked into the image rather than mounted, so edits appeared to have no
+effect until a rebuild.
+
+### Gotchas when re-running
+
+- **Re-seeded the pool? Restart Locust.** `locustfile.py` reads the fixture at import, so the
+  containers keep using the old pool's tokens after `db_seed.py` runs again. Stale tokens fail the
+  WebSocket handshake as HTTP `403` (the server closes before `accept()`, so the client never sees
+  close code 4001).
+- **Running the Locust flow? Scale both services in the same command.**
+  `docker compose ... up --scale backend=3 --scale locust-worker=3` - naming only one converges the
+  other back to a single replica, silently. (The CLI-only flow at the top of this section scales just
+  `backend` on purpose; it never uses the Locust workers.)
+- **Editing `locustfile.py` needs no rebuild** (it is bind-mounted over the image's baked copy), but it
+  does need `docker compose restart locust-worker locust-master`.
 
 ---
 

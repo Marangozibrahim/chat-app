@@ -8,10 +8,11 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
-from app.dependencies import close_redis, init_redis
+from app.dependencies import close_redis, get_redis_pool, init_redis
 from app.rate_limit import limiter
-from app.routers import auth, messages, rooms, uploads
+from app.routers import admin, auth, messages, rooms, uploads
 from app.routers import ws as ws_router
+from app.services.worker_registry import heartbeat_loop
 from app.ws.manager import manager
 from app.ws.redis_listener import listen
 
@@ -20,8 +21,10 @@ from app.ws.redis_listener import listen
 async def lifespan(app: FastAPI):
     await init_redis()
     listener_task = asyncio.create_task(listen(manager))
+    heartbeat_task = asyncio.create_task(heartbeat_loop(get_redis_pool(), manager))
     yield
     listener_task.cancel()
+    heartbeat_task.cancel()
     await close_redis()
 
 
@@ -43,6 +46,7 @@ app.include_router(auth.router)
 app.include_router(rooms.router)
 app.include_router(messages.router)
 app.include_router(uploads.router)
+app.include_router(admin.router)
 app.include_router(ws_router.router)
 
 

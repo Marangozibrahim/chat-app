@@ -9,3 +9,7 @@ node_modules/
 *.egg-info/
 .claude/settings.local.json
 CLAUDE.md
+backend/scripts/.loadtest_users.json
+# Load-test output (locust --csv/--html, load_test.py --out) — regenerated per run
+loadtest/results/*
+!loadtest/results/.gitkeep

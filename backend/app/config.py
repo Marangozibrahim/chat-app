@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     presigned_url_expiry: int = 3600
     max_message_chars: int = 4000
 
+    # Empty by default so /admin/workers refuses everyone until explicitly set.
+    admin_token: str = ""
+
     # Comma-separated list of allowed browser origins. "*" + credentials is
     # invalid per the CORS spec, so set explicit origins in production.
     cors_origins_raw: str = "http://localhost:3000,http://localhost:5173"
