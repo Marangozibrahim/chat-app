@@ -395,6 +395,48 @@ container. Both now persist to `loadtest/results/` (gitignored, regenerated per 
 Locust's CSVs are also downloadable from the UI's "Download Data" tab mid-run; the files
 above are the same data, written automatically so a run survives the container.
 
+### Measured results
+
+Both tools were run at 1000 simulated users against 3 backend replicas, on a 12-core
+Windows host under Docker Desktop, with the load generators inside the compose network
+(so Docker Desktop's host port-forwarding relay is out of the path). Raw output is in
+`loadtest/results/`.
+
+**`load_test.py`** - 1000 users, 50 rooms, 60s ramp + 60s hold, 2 messages/min/user:
+
+| | |
+|---|---|
+| Connections established | 1000 / 1000, 0 connect failures |
+| Messages sent | 2,499 |
+| Broadcasts received | 47,709 (~19x fan-out, matching ~20 users/room) |
+| Round-trip send -> echo | **p50 8ms, p95 19ms, max 97ms** (n=47,709) |
+| Errors | 0 |
+
+Connections ramped linearly (73 -> 241 -> 407 -> 576 -> 740 -> 907 -> 1000) with no
+latency degradation as they climbed - p95 stayed at 19ms with all 1000 sockets live.
+
+**Locust** - 1000 users, 50 rooms, 25 users/s spawn rate, 3 workers:
+
+| | |
+|---|---|
+| `connect` | 1000 requests, 0 failures, median 41ms / p95 170ms |
+| `ping` | 5,978 requests, 0 failures |
+| `message` | 1,983 requests, 0 failures |
+| Connections per backend replica | 351 / 324 / 325 |
+| `run_failures.csv` | empty (header only) |
+
+The even split across replicas is Docker's embedded DNS round-robin doing the work a load
+balancer would - each new WebSocket resolves `backend` independently. `/admin/workers`
+reported the same 1000 connections across 3 workers at the same moment, which is the
+cross-check that the dashboard and the load tool agree.
+
+Two load-generator bugs turned up on the way to those numbers, both fixed - see the
+`ChatUser` notes in `loadtest/locustfile.py`: a `create_connection` timeout that also
+applied to `recv` (killing the reader after 10 quiet seconds, so uvicorn's WebSocket pings
+went unanswered and the server dropped every connection about a minute in), and the
+locustfile being baked into the image rather than mounted, so edits appeared to have no
+effect until a rebuild.
+
 ### Gotchas when re-running
 
 - **Re-seeded the pool? Restart Locust.** `locustfile.py` reads the fixture at import, so the
