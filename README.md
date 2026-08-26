@@ -370,14 +370,41 @@ For a quick scale test without spinning up Locust, `load_test.py` supports the s
 ```bash
 docker compose exec backend python scripts/db_seed.py --users 1000 --rooms 50
 
-docker run --rm --network chat-app_default -v "${PWD}/backend/scripts:/scripts" python:3.12-slim sh -c \
+docker run --rm --network chat-app_default -v "${PWD}/backend/scripts:/scripts" -v "${PWD}/loadtest/results:/results" python:3.12-slim sh -c \
   "pip install -q httpx websockets && python /scripts/load_test.py \
    --base-url http://backend:8000 --api-prefix '' \
    --users 1000 --rooms 50 --msg-rate 2 --duration 60 --ramp-up 60 \
-   --admin-token <ADMIN_TOKEN>"
+   --admin-token <ADMIN_TOKEN> --out /results/cli-1000.json"
 ```
 
 At high user counts, widen `--rooms` so per-room broadcast fan-out doesn't blow up — e.g. 1000 users in 3 rooms means every message fans out to ~333 sockets; 1000 users in 50 rooms (~20/room) keeps delivery volume sane. Lower `--msg-rate` for the first big run too.
+
+### Where the results end up
+
+Neither tool used to keep anything: the CLI script printed its report to stdout, and
+Locust held stats only in the master's memory, so results died with the terminal or the
+container. Both now persist to `loadtest/results/` (gitignored, regenerated per run):
+
+| File | Written by | When |
+|------|-----------|------|
+| `run_stats.csv`, `run_failures.csv` | `locust-master --csv` | continuously during the run |
+| `run_stats_history.csv` | `--csv-full-history` | one row per stats interval - the timeline behind the charts |
+| `report.html` | `--html` | on Locust shutdown (Stop in the UI, then `docker compose down`) |
+| `<name>.json` | `load_test.py --out <path>` | end of run - config, connect failures, latency percentiles, worker snapshots |
+
+Locust's CSVs are also downloadable from the UI's "Download Data" tab mid-run; the files
+above are the same data, written automatically so a run survives the container.
+
+### Gotchas when re-running
+
+- **Re-seeded the pool? Restart Locust.** `locustfile.py` reads the fixture at import, so the
+  containers keep using the old pool's tokens after `db_seed.py` runs again. Stale tokens fail the
+  WebSocket handshake as HTTP `403` (the server closes before `accept()`, so the client never sees
+  close code 4001).
+- **Scale both services every time.** `docker compose ... up --scale backend=3 --scale locust-worker=3`
+  - naming only one converges the other back to one replica, silently.
+- **Editing `locustfile.py` needs no rebuild** (it is bind-mounted over the image's baked copy), but it
+  does need `docker compose restart locust-worker locust-master`.
 
 ---
 

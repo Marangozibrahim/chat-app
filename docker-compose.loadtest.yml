@@ -25,11 +25,21 @@ services:
 
   locust-master:
     build: ./loadtest
-    command: locust -f locustfile.py --host http://backend:8000 --master
+    # --csv writes run/_stats.csv, _failures.csv and (with --csv-full-history)
+    # _stats_history.csv continuously during the run; --html is written when
+    # Locust quits. Without these, results only ever live in the master's
+    # memory and die with the container.
+    command: >
+      locust -f locustfile.py --host http://backend:8000 --master
+      --csv /results/run --csv-full-history --html /results/report.html
     ports:
       - "127.0.0.1:8089:8089"
     volumes:
       - ./backend/scripts:/fixtures:ro
+      - ./loadtest/results:/results
+      # Overlays the copy baked in by loadtest/Dockerfile: without this, editing
+      # locustfile.py and restarting keeps running the image's stale copy.
+      - ./loadtest/locustfile.py:/app/locustfile.py:ro
     depends_on:
       - backend
 
@@ -38,5 +48,6 @@ services:
     command: locust -f locustfile.py --worker --master-host locust-master
     volumes:
       - ./backend/scripts:/fixtures:ro
+      - ./loadtest/locustfile.py:/app/locustfile.py:ro
     depends_on:
       - locust-master

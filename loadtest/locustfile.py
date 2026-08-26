@@ -51,9 +51,17 @@ class ChatUser(User):
         url = f"{ws_host}/ws/rooms/{self.room_id}?token={self.chat_user['access_token']}"
 
         self.ws = None
+        self._closing = False
         start = time.perf_counter()
         try:
             self.ws = websocket.create_connection(url, timeout=10)
+            # create_connection's timeout applies to the handshake AND to every
+            # later recv/send on the socket. Left at 10s, the receive loop below
+            # raises WebSocketTimeoutException after 10 quiet seconds and stops
+            # reading, which means the server's WebSocket pings never get a pong
+            # and the connection is dropped mid-run. Clear it after the
+            # handshake: gevent keeps the blocking recv cooperative anyway.
+            self.ws.settimeout(None)
         except Exception as e:
             self._fire("connect", start, exception=e)
             return
@@ -63,17 +71,32 @@ class ChatUser(User):
         self._receiver = gevent.spawn(self._receive_loop)
 
     def on_stop(self):
+        # Tells the receive loop that the close it is about to see is ours, not
+        # a failure: without this every user reports a bogus "recv" failure at
+        # the end of a run, which pollutes the failure ratio and makes Locust
+        # exit non-zero on a perfectly clean run.
+        self._closing = True
         if getattr(self, "_receiver", None):
             self._receiver.kill(block=False)
         if self.ws:
             self.ws.close()
 
     def _receive_loop(self):
-        try:
-            while True:
+        # Must survive quiet periods: a dead reader stops answering server pings,
+        # which closes the connection. Only a real socket error ends the loop --
+        # and when that happens it is reported as a "recv" failure rather than
+        # swallowed, because a silently dead reader looks identical to a healthy
+        # idle one until the connection dies 20s later with a broken pipe.
+        start = time.perf_counter()
+        while True:
+            try:
                 self.ws.recv()
-        except Exception:
-            pass
+            except websocket.WebSocketTimeoutException:
+                continue
+            except Exception as e:
+                if not getattr(self, "_closing", False):
+                    self._fire("recv", start, exception=e)
+                return
 
     def _fire(self, name, start, exception=None, response_length=0):
         events.request.fire(

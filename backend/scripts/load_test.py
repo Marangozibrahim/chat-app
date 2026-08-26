@@ -38,6 +38,7 @@ import random
 import string
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -194,6 +195,7 @@ async def seed(args):
 
 class Stats:
     def __init__(self):
+        self.started_at = datetime.now(timezone.utc).isoformat()
         self.connected = 0
         self.connect_failed = 0
         self.sent = 0
@@ -288,23 +290,64 @@ async def poll_admin(client, base_url, api_prefix, admin_token, snapshots):
         pass
 
 
-def print_report(args, stats, admin_snapshots):
-    print("\n=== Load test report ===")
-    print(f"Users: {args.users}  Duration: {args.duration}s  Target rate: {args.msg_rate}/min/user")
-    print(f"Connected: {stats.connected}  Connect failures: {stats.connect_failed}")
-    if stats.sample_connect_error:
-        print(f"Sample connect error: {stats.sample_connect_error}")
-    print(f"Messages sent: {stats.sent}  Received (echoed back to sender): {stats.received}")
-    print(f"Errors: {stats.errors}")
+def build_report(args, stats, admin_snapshots):
+    """Collect the run's results into a plain dict — printed, and written to --out."""
+    report = {
+        "started_at": stats.started_at,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "config": {
+            "base_url": args.base_url,
+            "api_prefix": args.api_prefix,
+            "users": args.users,
+            "rooms": args.rooms,
+            "duration_s": args.duration,
+            "ramp_up_s": args.ramp_up,
+            "msg_rate_per_min": args.msg_rate,
+        },
+        "connections": {
+            "connected": stats.connected,
+            "connect_failed": stats.connect_failed,
+            "sample_connect_error": stats.sample_connect_error,
+        },
+        "messages": {"sent": stats.sent, "received": stats.received, "errors": stats.errors},
+        "latency_ms": None,
+        "worker_snapshots": [
+            {
+                "t": round(t, 1),
+                "worker_count": snap["worker_count"],
+                "total_connections": snap["total_connections"],
+                "active_rooms": snap["active_rooms"],
+            }
+            for t, snap in admin_snapshots
+        ],
+    }
     if stats.latencies:
         lat = sorted(stats.latencies)
-        p50 = lat[len(lat) // 2]
-        p95 = lat[int(len(lat) * 0.95)]
-        print(f"Latency send->echo: p50={p50 * 1000:.0f}ms  p95={p95 * 1000:.0f}ms  max={lat[-1] * 1000:.0f}ms  (n={len(lat)})")
-    if admin_snapshots:
+        report["latency_ms"] = {
+            "p50": round(lat[len(lat) // 2] * 1000),
+            "p95": round(lat[int(len(lat) * 0.95)] * 1000),
+            "max": round(lat[-1] * 1000),
+            "n": len(lat),
+        }
+    return report
+
+
+def print_report(report):
+    cfg, conns, msgs = report["config"], report["connections"], report["messages"]
+    print("\n=== Load test report ===")
+    print(f"Users: {cfg['users']}  Duration: {cfg['duration_s']}s  Target rate: {cfg['msg_rate_per_min']}/min/user")
+    print(f"Connected: {conns['connected']}  Connect failures: {conns['connect_failed']}")
+    if conns["sample_connect_error"]:
+        print(f"Sample connect error: {conns['sample_connect_error']}")
+    print(f"Messages sent: {msgs['sent']}  Received (echoed back to sender): {msgs['received']}")
+    print(f"Errors: {msgs['errors']}")
+    lat = report["latency_ms"]
+    if lat:
+        print(f"Latency send->echo: p50={lat['p50']}ms  p95={lat['p95']}ms  max={lat['max']}ms  (n={lat['n']})")
+    if report["worker_snapshots"]:
         print("\nWorker snapshots (from /admin/workers):")
-        for t, snap in admin_snapshots:
-            print(f"  t+{t:5.0f}s  workers={snap['worker_count']}  connections={snap['total_connections']}  active_rooms={snap['active_rooms']}")
+        for snap in report["worker_snapshots"]:
+            print(f"  t+{snap['t']:5.0f}s  workers={snap['worker_count']}  connections={snap['total_connections']}  active_rooms={snap['active_rooms']}")
 
 
 async def run(args):
@@ -354,7 +397,13 @@ async def run(args):
         t.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
 
-    print_report(args, stats, admin_snapshots)
+    report = build_report(args, stats, admin_snapshots)
+    print_report(report)
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2))
+        print(f"\nReport written to {out}")
 
 
 def main():
@@ -372,6 +421,7 @@ def main():
     parser.add_argument("--msg-rate", type=float, default=6, help="Messages per minute per simulated user")
     parser.add_argument("--ramp-up", type=float, default=10, help="Spread connection starts over this many seconds")
     parser.add_argument("--admin-token", default=None, help="Also poll /admin/workers during the run")
+    parser.add_argument("--out", default=None, help="Write the run report as JSON to this path")
     args = parser.parse_args()
 
     if args.seed_users is not None:
