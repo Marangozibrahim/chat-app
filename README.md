@@ -389,11 +389,21 @@ container. Both now persist to `loadtest/results/` (gitignored, regenerated per 
 |------|-----------|------|
 | `run_stats.csv`, `run_failures.csv` | `locust-master --csv` | continuously during the run |
 | `run_stats_history.csv` | `--csv-full-history` | one row per stats interval - the timeline behind the charts |
-| `report.html` | `--html` | on Locust shutdown (Stop in the UI, then `docker compose down`) |
+| `report.html` | `--html` | only when Locust exits *normally* - a `--headless -t <time>` run, or Ctrl+C in a foreground master. `docker compose stop` sends SIGTERM, which skips the write (verified: `locust/main.py` calls `save_html_report()` after `main_greenlet.join()` and on KeyboardInterrupt, not from its SIGTERM handler) |
 | `<name>.json` | `load_test.py --out <path>` | end of run - config, connect failures, latency percentiles, worker snapshots |
 
 Locust's CSVs are also downloadable from the UI's "Download Data" tab mid-run; the files
 above are the same data, written automatically so a run survives the container.
+
+For a UI-driven run, grab the HTML report from the master **while it is still running** rather
+than relying on the `--html` write at exit:
+
+```bash
+curl -s "http://localhost:8089/stats/report?download=1" -o loadtest/results/report.html
+```
+
+Stopping the *run* (Stop in the UI) keeps the master alive and leaves the CSVs final; restarting
+the master **container** resets them, so copy anything you want to keep first.
 
 ### Measured results
 
